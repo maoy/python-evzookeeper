@@ -7,12 +7,15 @@ import eventlet
 
 eventlet.monkey_patch()
 
+from eventlet import greenio
+
 import time
 import zookeeper
 import threading
 
 import sys
 import os
+assert eventlet.patcher.is_monkey_patched(os)
 ################
 import logging
 logger = logging.getLogger('zk')
@@ -33,6 +36,8 @@ class Base(object):
         self.timeout = timeout # connection timeout (in seconds): default 10
         self.connected = False
         self.pipe = os.pipe()
+        #self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
+        self.grfile = greenio.GreenPipe(self.pipe[0])
         zookeeper.set_log_stream(open("/dev/null"))
         
         def watcher(handle, type, state, name):
@@ -45,7 +50,7 @@ class Base(object):
 
         #self.cv.acquire()
         self.handle = zookeeper.init(self.addr, watcher, self.timeout*1000) # zk in ms
-        print os.read(self.pipe[0], 1024)
+        print self.grfile.read(10)
         if not self.connected:
             logger.error("Connection to ZooKeeper timed out in %s seconds - server running on %s?" % (
                 self.timeout, self.addr))
@@ -104,7 +109,8 @@ class Queue(Base):
                 if data is not None:
                     return data
             print 'about to block on pipe read'
-            print os.read(self.pipe[0], 1024) 
+            #print os.read(self.pipe[0], 1024) 
+            print self.grfile.read(10)
             print 'done pipe read'           
 
 
@@ -156,6 +162,7 @@ def testqueue():
 
 def main():
     #twothreads()
+    print "starting..."
     testqueue()
     
 if __name__ == '__main__':
