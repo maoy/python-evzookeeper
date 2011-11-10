@@ -9,7 +9,7 @@ eventlet.monkey_patch()
 
 from eventlet import greenio
 from eventlet.support import get_errno # needed
-from eventlet.htubs import trampoline
+from eventlet.hubs import trampoline
 
 import time
 import zookeeper
@@ -32,9 +32,12 @@ logger.addHandler(ch)
 
 class SocketDuckForFdTimeout(greenio._SocketDuckForFd):
     
+    def __init__(self, fileno, timeout):
+        self._timeout = timeout
+        super(SocketDuckForFdTimeout, self).__init__(fileno)
     def recv(self, buflen):
         print 'in recv'
-        trampoline(self, read=True, timeout=4.0)
+        trampoline(self, read=True, timeout=self._timeout)
         while True:
             try:
                 data = os.read(self._fileno, buflen)
@@ -49,7 +52,7 @@ class SocketDuckForFdTimeout(greenio._SocketDuckForFd):
     
 class TimeoutGreenPipe(greenio.GreenPipe):
     """read method with timeout"""
-    def __init__(self, f, mode='r', bufsize=-1, timeout=4.0):
+    def __init__(self, f, mode='r', bufsize=-1, timeout=None):
         if not isinstance(f, (basestring, int, file)):
             raise TypeError('f(ile) should be int, str, unicode or file, not %r' % f)
 
