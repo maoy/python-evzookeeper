@@ -19,10 +19,10 @@ assert eventlet.patcher.is_monkey_patched(os)
 ################
 import logging
 logger = logging.getLogger('zk')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 # create console handler and set level to debug
-ch.setLevel(logging.DEBUG)
+ch.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 ch.setFormatter(formatter)
 logger.addHandler(ch)
@@ -36,8 +36,8 @@ class Base(object):
         self.timeout = timeout # connection timeout (in seconds): default 10
         self.connected = False
         self.pipe = os.pipe()
-        #self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
-        self.grfile = greenio.GreenPipe(self.pipe[0])
+        self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
+        #self.grfile = greenio.GreenPipe(self.pipe[0])
         zookeeper.set_log_stream(open("/dev/null"))
         
         def watcher(handle, type, state, name):
@@ -46,11 +46,13 @@ class Base(object):
             logger.info('%s Connected to Zookeeper...' % self.__class__.__name__)
             #self.cv.acquire()
             self.connected = True #race !!
-            retv = os.write(self.pipe[1], "connected")
+            retv = os.write(self.pipe[1], "c")
+            print 'written', retv
 
         #self.cv.acquire()
         self.handle = zookeeper.init(self.addr, watcher, self.timeout*1000) # zk in ms
-        print self.grfile.read(10)
+        print 'blocking on first read'
+        print self.grfile.read(1)
         if not self.connected:
             logger.error("Connection to ZooKeeper timed out in %s seconds - server running on %s?" % (
                 self.timeout, self.addr))
@@ -100,7 +102,7 @@ class Queue(Base):
         '''
         def watcher(handle, event, state, path):
             print "watcher in dequeue called!"
-            os.write(self.pipe[1], "data")
+            os.write(self.pipe[1], "d")
 
         while True:    
             children = sorted(zookeeper.get_children(self.handle, self.path, watcher))
@@ -110,7 +112,7 @@ class Queue(Base):
                     return data
             print 'about to block on pipe read'
             #print os.read(self.pipe[0], 1024) 
-            print self.grfile.read(10)
+            print self.grfile.read(1)
             print 'done pipe read'           
 
 
@@ -139,18 +141,19 @@ def dequeue():
     logger.info("Consuming all items in queue")
     v = queue.dequeue()
     while v != 'EOF':
-        logger.info(v)
+        logger.info("dequeued item: %s", v)
         v = queue.dequeue()
     logger.info("Done")
     
 def testqueue():
     global queue
-    t2 = eventlet.greenthread.spawn(periodic_print, "print thread")
     queue = Queue('localhost:2181', "/test-queue")
     t1 = eventlet.greenthread.spawn(dequeue)
+    t2 = eventlet.greenthread.spawn(periodic_print, "print thread")
     #time.sleep(10)
+    print "after green spawn"
     eventlet.greenthread.sleep(5)
-    logger.info("Enqueuing three items")
+    print ("Enqueuing three items")
     queue.enqueue("item 1")
     queue.enqueue("item 2")
     queue.enqueue("item 3")
