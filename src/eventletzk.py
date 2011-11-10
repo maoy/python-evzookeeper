@@ -8,6 +8,8 @@ import eventlet
 eventlet.monkey_patch()
 
 from eventlet import greenio
+from eventlet.support import get_errno # needed
+from eventlet.htubs import trampoline
 
 import time
 import zookeeper
@@ -27,6 +29,48 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
+
+class SocketDuckForFdTimeout(greenio._SocketDuckForFd):
+    
+    def recv(self, buflen):
+        print 'in recv'
+        trampoline(self, read=True, timeout=4.0)
+        while True:
+            try:
+                data = os.read(self._fileno, buflen)
+                print 'in recv after os.read'
+                return data
+            except OSError, e:
+                if get_errno(e) != errno.EAGAIN:
+                    raise IOError(*e.args)
+            #trampoline(self, read=True)
+                           
+            #trampoline(self, read=True)
+    
+class TimeoutGreenPipe(greenio.GreenPipe):
+    """read method with timeout"""
+    def __init__(self, f, mode='r', bufsize=-1, timeout=4.0):
+        if not isinstance(f, (basestring, int, file)):
+            raise TypeError('f(ile) should be int, str, unicode or file, not %r' % f)
+
+        if isinstance(f, basestring):
+            f = open(f, mode, 0)
+ 
+        if isinstance(f, int):
+            fileno = f
+            self._name = "<fd:%d>" % fileno
+        else:
+            fileno = os.dup(f.fileno())
+            self._name = f.name
+            if f.mode != mode:
+                raise ValueError('file.mode %r does not match mode parameter %r' % (f.mode, mode))
+            self._name = f.name
+            f.close()
+
+        greenio._fileobject.__init__(self, SocketDuckForFdTimeout(fileno, timeout=timeout), mode, bufsize)
+        greenio.set_nonblocking(self)
+        self.softspace = 0
+    
 OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
 
 class Base(object):
@@ -36,7 +80,10 @@ class Base(object):
         self.timeout = timeout # connection timeout (in seconds): default 10
         self.connected = False
         self.pipe = os.pipe()
-        self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
+        #self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
+        self.grfile = TimeoutGreenPipe(self.pipe[0], 'rb', 0)
+        #self.grfile._sock = SocketDuckForFdTimeout(self.pipe[0])
+        print self.grfile._sock
         #self.grfile = greenio.GreenPipe(self.pipe[0])
         zookeeper.set_log_stream(open("/dev/null"))
         
@@ -45,15 +92,15 @@ class Base(object):
             '''
             logger.info('%s Connected to Zookeeper...' % self.__class__.__name__)
             #self.cv.acquire()
-            self.connected = True #race !!
             retv = os.write(self.pipe[1], "c")
             print 'written', retv
 
         #self.cv.acquire()
         self.handle = zookeeper.init(self.addr, watcher, self.timeout*1000) # zk in ms
         print 'blocking on first read'
-        print self.grfile.read(1)
-        if not self.connected:
+        try:
+            print self.grfile.read(1)
+        except eventlet.timeout.Timeout:
             logger.error("Connection to ZooKeeper timed out in %s seconds - server running on %s?" % (
                 self.timeout, self.addr))
             raise RuntimeError("timeout in connecting to zookeeper")
@@ -147,9 +194,9 @@ def dequeue():
     
 def testqueue():
     global queue
+    t2 = eventlet.greenthread.spawn(periodic_print, "print thread")
     queue = Queue('localhost:2181', "/test-queue")
     t1 = eventlet.greenthread.spawn(dequeue)
-    t2 = eventlet.greenthread.spawn(periodic_print, "print thread")
     #time.sleep(10)
     print "after green spawn"
     eventlet.greenthread.sleep(5)
