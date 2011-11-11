@@ -29,11 +29,11 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-class SocketDuckForFdTimeout(greenio._SocketDuckForFd):
+class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
     
     def __init__(self, fileno, timeout):
         self._timeout = timeout
-        super(SocketDuckForFdTimeout, self).__init__(fileno)
+        super(_SocketDuckForFdTimeout, self).__init__(fileno)
     def recv(self, buflen):
         print 'in recv'
         trampoline(self, read=True, timeout=self._timeout)
@@ -69,7 +69,7 @@ class TimeoutGreenPipe(greenio.GreenPipe):
             self._name = f.name
             f.close()
 
-        greenio._fileobject.__init__(self, SocketDuckForFdTimeout(fileno, timeout=timeout), mode, bufsize)
+        greenio._fileobject.__init__(self, _SocketDuckForFdTimeout(fileno, timeout=timeout), mode, bufsize)
         greenio.set_nonblocking(self)
         self.softspace = 0
     
@@ -84,7 +84,7 @@ class Base(object):
         self.pipe = os.pipe()
         #self.grfile = greenio.GreenPipe(self.pipe[0], 'rb', 0)
         self.grfile = TimeoutGreenPipe(self.pipe[0], 'rb', 0)
-        #self.grfile._sock = SocketDuckForFdTimeout(self.pipe[0])
+        #self.grfile._sock = _SocketDuckForFdTimeout(self.pipe[0])
         print self.grfile._sock
         #self.grfile = greenio.GreenPipe(self.pipe[0])
         zookeeper.set_log_stream(open("/dev/null"))
