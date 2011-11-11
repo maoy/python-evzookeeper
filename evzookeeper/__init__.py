@@ -5,7 +5,22 @@ import functools
 
 from evzookeeper import utils
 
+ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
+
+def generic_completion(pc, results, *args):
+    """
+    used as the async completion function
+    pc: a PipeCondition object to notify main thread
+    results: an empty list to send result back
+    *args: depends on the completion function
+    """
+    assert not results
+    results.extend(args)
+    pc.notify()
+    
 class ZKSession(object):
+    
+    __slots__ = ("_zhandle", )
     
     def __init__(self, host, timeout=10):
         """
@@ -32,20 +47,28 @@ class ZKSession(object):
         EXPIRED_SESSION_STATE).
         
         RETURNS:
-        an integer handle. 
         If it fails to create a new zhandle the function throws an exception.
         """
         self._zhandle = None
         pc = utils.PipeCondition()
-        def init_cb(handle, type_, state, name):
+        def init_cb(handle, type_, stat, name):
             '''Fired when connected to ZK, return call from another thread
             '''
             pc.notify()
-        #self._zhandle = zookeeper.init(host, initcb, timeout*1000)
+        #TODO: recv_timeout, passwd
         self._zhandle = zookeeper.init(host, init_cb)
         pc.wait(timeout)
         
-    def create(self, path, value, acl, flags=0):
+    def close(self):
+        """
+        close the handle. potentially a blocking call?
+        """
+        if self._zhandle is not None:
+            zookeeper.close(self._zhandle)
+            # if closed successfully
+            self._zhandle = None
+    
+    def create(self, path, value, acl=None, flags=0):
         """
         create a node synchronously.
     
@@ -86,23 +109,221 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
-        results = {}
+        results = []
         pc = utils.PipeCondition()
-        def cb(handle, rc, value):
-            results["value"] = value
-            results["rc"] = rc
-            pc.notify()
-        ok = zookeeper.acreate(self._zhandle, path, value, acl, flags, cb)
+        ok = zookeeper.acreate(self._zhandle, path, value, acl, flags,
+                               functools.partial(generic_completion, 
+                                                 pc, results))
         assert ok == zookeeper.OK
         pc.wait()
-        rc = results["rc"]
-        value = results["value"]
+        #unpack result as string_completion
+        handle, rc, real_path = results
+        assert handle == self._zhandle
         if rc == zookeeper.OK:
-            return value
-        raise self.rc2exception[rc](zookeeper.zerror(rc))
+            return real_path
+        self._raise_exception(rc)
+    
+    def delete(self, path, version=-1):
+        """
+        delete a node in zookeeper synchronously.
+
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+
+        (Subsequent parameters are optional)
+        version: the expected version of the node. The function will fail if the
+        actual version of the node does not match the expected version.
+         If -1 (the default) is used the version check will not take place. 
+
+        RETURNS:
+        OK operation completed successfully
+
+        One of the following exceptions is returned when an error occurs.
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        BADVERSION expected version does not match actual version.
+        NOTEMPTY children are present; node cannot be deleted.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or 
+        AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshal a request; possibly, out of 
+         memory
+        """
+        results = []
+        pc = utils.PipeCondition()
+        ok = zookeeper.adelete(self._zhandle, path, version, 
+                               functools.partial(generic_completion, 
+                                                 pc, results))
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as void_completion
+        handle, rc = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return rc
+        self._raise_exception(rc)
+
+
+    def exists(self, path, watch=None):
+        """checks the existence of a node in zookeeper.
+    
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+    
+        (Subsequent parameters are optional)
+    
+        watch: if not None, a watch will be set at the server to notify the 
+        client if the node changes. The watch will be set even if the node does not 
+        exist. This allows clients to watch for nodes to appear.
+        
+        Return: stat if the node exists    
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.aexists(self._zhandle, path, watch,
+                               functools.partial(generic_completion, 
+                                                 pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as stat_completion
+        handle, rc, stat = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return stat
+        self._raise_exception(rc)
+        
+    def get(self, path, watcher=None, bufferlen=1024*1024):
+        """
+        gets the data associated with a node synchronously.
+        
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+            separating ancestors of the node.
+    
+        (subsequent parameters are optional)
+        watcher: if not None, a watch will be set at the server to notify 
+        the client if the node changes.
+        bufferlen: This value defaults to 1024*1024 - 1Mb. This method 
+         returns 
+        the minimum of bufferlen and the true length of the znode's 
+         data. 
+    
+        RETURNS:
+        the (data, stat) tuple associated with the node
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.aget(self._zhandle, path, watcher,
+                               functools.partial(generic_completion, 
+                                                 pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as data_completion
+        handle, rc, data, stat = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return (data, stat)
+        self._raise_exception(rc)
+
+    def get_acl(self, path):
+        zookeeper.aget_acl()
+        
+    def get_children(self, path, watcher=None):
+        """
+        lists the children of a node synchronously.
+    
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+    
+        (subsequent parameters are optional)
+        watcher: if non-null, a watch will be set at the server to notify 
+        the client if the node changes.
+    
+        RETURNS:
+        A list of znode names
+        EXCEPTIONS:
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE 
+         or AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out 
+         of memory
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.aget_children(self._zhandle, path, watcher,
+                                     functools.partial(generic_completion, 
+                                                       pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as strings_completion
+        handle, rc, children = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return children
+        self._raise_exception(rc)
+    
+    def set(self, path, data, version=-1):
+        """
+        sets the data associated with a node. See set2 function if
+        you require access to the stat information associated with the znode.
+    
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+        data: the buffer holding data to be written to the node.
+    
+        (subsequent parameters are optional)
+        version: the expected version of the node. The function will fail if 
+        the actual version of the node does not match the expected version. 
+         If -1 is used the version check will not take place. 
+    
+        RETURNS:
+        the new stat of the node.
+    
+        EXCEPTIONS:
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        BADVERSION expected version does not match actual version.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or 
+         AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out of 
+         memory
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.aset(self._zhandle, path, data, version,
+                                     functools.partial(generic_completion, 
+                                                       pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as stat_completion
+        handle, rc, stat = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return stat
+        self._raise_exception(rc)
+    
+    
+    def set_acl(self):
+        zookeeper.aset_acl()
+        
+    def sync(self):
+        zookeeper.async()
+        zookeeper.get()
+        
+    def __del__(self):
+        self.close()
+
+    def _raise_exception(self, rc):
+        raise self._rc2exception[rc](zookeeper.zerror(rc))
         
     # translate return code to exception
-    rc2exception = {zookeeper.APIERROR: zookeeper.ApiErrorException,
+    _rc2exception = {zookeeper.APIERROR: zookeeper.ApiErrorException,
                     zookeeper.AUTHFAILED: zookeeper.AuthFailedException,
                     zookeeper.BADARGUMENTS: zookeeper.BadArgumentsException,
                     zookeeper.BADVERSION: zookeeper.BadVersionException,
@@ -126,95 +347,23 @@ class ZKSession(object):
                     zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
                     zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
                     }
-        
-
-    def exists(self, path, watch=None):
-        """checks the existence of a node in zookeeper.
     
-        path: the name of the node. Expressed as a file name with slashes 
-        separating ancestors of the node.
-    
-        (Subsequent parameters are optional)
-    
-        watch: if not None, a watch will be set at the server to notify the 
-        client if the node changes. The watch will be set even if the node does not 
-        exist. This allows clients to watch for nodes to appear.
-    
-    completion: the routine to invoke when the request completes. The 
-     completion
-    will be triggered with one of the following codes passed in as the rc 
-     argument:
-    OK operation completed successfully
-    NONODE the node does not exist.
-    NOAUTH the client does not have permission.
-    
-    data: the data that will be passed to the completion routine when the 
-    function completes.
-    OK on success or one of the following errcodes on failure:
-    BADARGUMENTS - invalid input parameters
-    INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or 
-     AUTH_FAILED_STATE
-    MARSHALLINGERROR - failed to marshall a request; possibly, out of 
-     memory
-        """
-        zookeeper.aexists()
-        
-    def get(self, path, watcher=None, bufferlen=1024*1024):
-        """
-        gets the data associated with a node synchronously.
-    PARAMETERS:
-    path the name of the node. Expressed as a file name with slashes 
-    separating ancestors of the node.
-    
-    (subsequent parameters are optional)
-    watcher if not None, a watch will be set at the server to notify 
-    the client if the node changes.
-    bufferlen: This value defaults to 1024*1024 - 1Mb. This method 
-     returns 
-    the minimum of bufferlen and the true length of the znode's 
-     data. 
-    RETURNS:
-    the data associated with the node
-    OK operation completed successfully
-    NONODE the node does not exist.
-    NOAUTH the client does not have permission.
-    BADARGUMENTS - invalid input parameters
-    INVALIDSTATE - zhandle state is either in 
-     SESSION_EXPIRED_STATE or AUTH_FAILED_STATE
-    MARSHALLINGERROR - failed to marshall a request; possibly, out 
-     of memory
-        """
-        zookeeper.aget()
-        raise zookeeper.NoNodeException
-    def get_acl(self, path):
-        zookeeper.aget_acl()
-        
-    def get_children(self, path):
-        zookeeper.aget_children()
-    
-    def set(self):
-        zookeeper.aset()
-    
-    def set_acl(self):
-        zookeeper.aset_acl()
-        
-    def sync(self):
-        zookeeper.async()
-        zookeeper.get()
-        
-    def close(self):
-        if self._zhandle is not None:
-            zookeeper.close(self._zhandle)
-            # if closed successfully
-            self._zhandle = None
-    
-    def __del__(self):
-        self.close()
-
         
 def test():
-    x = ZKSession("localhost:2181", 10)
+    session = ZKSession("localhost:2181", 10)
+    print 'connected'
+    session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
+    print 'test-tmp created'
+    try:
+        session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
+    except zookeeper.NodeExistsException:
+        pass
+    print session.exists("/test")
+    session.delete("/test")
+    session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
+    print session.get("/test")
     print 'done.'
+    print session.get("/test2")
     
 if __name__=="__main__":
     test()

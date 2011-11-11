@@ -67,6 +67,8 @@ class PipeCondition(object):
     
     create the object in the main thread, call wait(), then
     call notify() in another OS thread. 
+    
+    Right now notify() can only be used once
     '''
 
     def __init__(self):
