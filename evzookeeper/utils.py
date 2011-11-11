@@ -95,6 +95,7 @@ class PipeCondition(object):
             self._greenpipe = None
 
     def __del__(self):
+        return
         try:
             self._close_wfd()
         finally:

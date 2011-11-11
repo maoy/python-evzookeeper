@@ -1,6 +1,7 @@
 import eventlet
 import zookeeper
 import os
+import functools
 
 from evzookeeper import utils
 
@@ -35,14 +36,14 @@ class ZKSession(object):
         If it fails to create a new zhandle the function throws an exception.
         """
         self._zhandle = None
-        self._pcv = utils.PipeCondition()
-        def initcb(handle, type_, state, name):
+        pc = utils.PipeCondition()
+        def init_cb(handle, type_, state, name):
             '''Fired when connected to ZK, return call from another thread
             '''
-            self._pcv.notify()
+            pc.notify()
         #self._zhandle = zookeeper.init(host, initcb, timeout*1000)
-        self._zhandle = zookeeper.init(host, initcb)
-        self._pcv.wait(timeout)
+        self._zhandle = zookeeper.init(host, init_cb)
+        pc.wait(timeout)
         
     def create(self, path, value, acl, flags=0):
         """
@@ -65,10 +66,10 @@ class ZKSession(object):
     
         flags: this parameter can be set to 0 for normal create or an OR
             of the Create Flags
-    
-    ??realpath: the real path that is created (this might be different than the
-    path to create because of the SEQUENCE flag.
-    the maximum length of real path you would want.
+
+        The real path that is created (this might be different than the
+        path to create because of the SEQUENCE flag.
+        the maximum length of real path you would want.
     
         RETURNS:
         The actual znode path that was created (may be different from path due 
@@ -85,11 +86,77 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
+        results = {}
+        pc = utils.PipeCondition()
         def cb(handle, rc, value):
-            pass
-        zookeeper.acreate(self._zhandle, path, value, acl, flags, cb)
+            results["value"] = value
+            results["rc"] = rc
+            pc.notify()
+        ok = zookeeper.acreate(self._zhandle, path, value, acl, flags, cb)
+        assert ok == zookeeper.OK
+        pc.wait()
+        rc = results["rc"]
+        value = results["value"]
+        if rc == zookeeper.OK:
+            return value
+        raise self.rc2exception[rc](zookeeper.zerror(rc))
+        
+    # translate return code to exception
+    rc2exception = {zookeeper.APIERROR: zookeeper.ApiErrorException,
+                    zookeeper.AUTHFAILED: zookeeper.AuthFailedException,
+                    zookeeper.BADARGUMENTS: zookeeper.BadArgumentsException,
+                    zookeeper.BADVERSION: zookeeper.BadVersionException,
+                    zookeeper.CLOSING: zookeeper.ClosingException,
+                    zookeeper.CONNECTIONLOSS: zookeeper.ConnectionLossException,
+                    zookeeper.DATAINCONSISTENCY: zookeeper.DataInconsistencyException,
+                    zookeeper.INVALIDACL: zookeeper.InvalidACLException,
+                    zookeeper.INVALIDCALLBACK: zookeeper.InvalidCallbackException,
+                    zookeeper.INVALIDSTATE: zookeeper.InvalidStateException,
+                    zookeeper.MARSHALLINGERROR: zookeeper.MarshallingErrorException,
+                    zookeeper.NONODE: zookeeper.NoNodeException,
+                    zookeeper.NOAUTH: zookeeper.NoAuthException,
+                    zookeeper.NODEEXISTS:zookeeper.NodeExistsException,
+                    zookeeper.NOCHILDRENFOREPHEMERALS:
+                        zookeeper.NoChildrenForEphemeralsException,
+                    zookeeper.NOTEMPTY: zookeeper.NotEmptyException,
+                    zookeeper.NOTHING: zookeeper.NothingException,
+                    zookeeper.OPERATIONTIMEOUT: zookeeper.OperationTimeoutException,
+                    zookeeper.RUNTIMEINCONSISTENCY: zookeeper.RuntimeInconsistencyException,
+                    zookeeper.SESSIONEXPIRED: zookeeper.SessionExpiredException,
+                    zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
+                    zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
+                    }
+        
 
-    def exists(self, path):
+    def exists(self, path, watch=None):
+        """checks the existence of a node in zookeeper.
+    
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+    
+        (Subsequent parameters are optional)
+    
+        watch: if not None, a watch will be set at the server to notify the 
+        client if the node changes. The watch will be set even if the node does not 
+        exist. This allows clients to watch for nodes to appear.
+    
+    completion: the routine to invoke when the request completes. The 
+     completion
+    will be triggered with one of the following codes passed in as the rc 
+     argument:
+    OK operation completed successfully
+    NONODE the node does not exist.
+    NOAUTH the client does not have permission.
+    
+    data: the data that will be passed to the completion routine when the 
+    function completes.
+    OK on success or one of the following errcodes on failure:
+    BADARGUMENTS - invalid input parameters
+    INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or 
+     AUTH_FAILED_STATE
+    MARSHALLINGERROR - failed to marshall a request; possibly, out of 
+     memory
+        """
         zookeeper.aexists()
         
     def get(self, path, watcher=None, bufferlen=1024*1024):
@@ -137,12 +204,13 @@ class ZKSession(object):
         
     def close(self):
         if self._zhandle is not None:
-            self.close()
+            zookeeper.close(self._zhandle)
+            # if closed successfully
             self._zhandle = None
     
     def __del__(self):
         self.close()
-        
+
         
 def test():
     x = ZKSession("localhost:2813", 10)

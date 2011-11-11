@@ -217,5 +217,17 @@ def main():
     print "starting..."
     testqueue()
     
+def benchmark_pipe():
+    b = time.time()
+    cnt = 0
+    try:
+        for i in range(1000000):
+            x, y = os.pipe()
+            cnt += 1
+            os.close(y)
+            os.close(x)
+    finally:
+        print cnt, time.time() - b
+    
 if __name__ == '__main__':
-    main()
+    benchmark_pipe()
