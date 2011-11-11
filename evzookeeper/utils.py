@@ -22,9 +22,7 @@ class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
         trampoline(self, read=True, timeout=self._timeout)
         while True:
             try:
-                data = os.read(self._fileno, buflen)
-                print 'in recv after os.read'
-                return data
+                return os.read(self._fileno, buflen)
             except OSError, e:
                 if get_errno(e) != errno.EAGAIN:
                     raise IOError(*e.args)
@@ -77,7 +75,15 @@ class PipeCondition(object):
         self._greenpipe = TimeoutGreenPipe(rfd, 'rb', 0)
         
     def notify(self):
-        os.write(self._wfd, "X") #write an arbitrary byte
+        try:
+            os.write(self._wfd, "X") #write an arbitrary byte
+        except IOError, e:
+            if e.errno == errno.EPIPE:
+                # the waiter fd is closed
+                pass
+            else:
+                # TODO: probably need to retry certain errors
+                raise e
         self._close_wfd()
 
     def wait(self, timeout=None):
@@ -101,7 +107,6 @@ class PipeCondition(object):
             self._greenpipe = None
 
     def __del__(self):
-        return
         try:
             self._close_wfd()
         finally:

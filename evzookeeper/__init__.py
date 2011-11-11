@@ -213,7 +213,7 @@ class ZKSession(object):
 
         
 def test():
-    x = ZKSession("localhost:2813", 10)
+    x = ZKSession("localhost:2181", 10)
     print 'done.'
     
 if __name__=="__main__":
