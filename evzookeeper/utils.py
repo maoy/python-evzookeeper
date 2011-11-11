@@ -11,13 +11,13 @@ from eventlet.hubs import trampoline
 from eventlet.support import get_errno
 
 
-class SocketDuckForFdTimeout(greenio._SocketDuckForFd):
+class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
     """
     enhance SocketDuckForFd with timeout
     """
     def __init__(self, fileno):
         self._timeout = None
-        super(SocketDuckForFdTimeout, self).__init__(fileno)
+        super(_SocketDuckForFdTimeout, self).__init__(fileno)
     def recv(self, buflen):
         trampoline(self, read=True, timeout=self._timeout)
         while True:
@@ -51,18 +51,24 @@ class TimeoutGreenPipe(greenio.GreenPipe):
             self._name = f.name
             f.close()
 
-        greenio._fileobject.__init__(self, SocketDuckForFdTimeout(fileno), 
+        greenio._fileobject.__init__(self, _SocketDuckForFdTimeout(fileno), 
                                      mode, bufsize)
         greenio.set_nonblocking(self)
         self.softspace = 0
     
     def set_timeout(self, timeout):
+        """set timeout in seconds before read"""
         self._sock._timeout = timeout
 
 
 class PipeCondition(object):
     '''
     A condition-variable like data structure implemented using pipes
+    
+    Typical usage with eventlet:
+    
+    create the object in the main thread, call wait(), then
+    call notify() in another OS thread. 
     '''
 
     def __init__(self):
