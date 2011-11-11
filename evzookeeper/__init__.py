@@ -266,10 +266,9 @@ class ZKSession(object):
             return children
         self._raise_exception(rc)
     
-    def set(self, path, data, version=-1):
+    def set2(self, path, data, version=-1):
         """
-        sets the data associated with a node. See set2 function if
-        you require access to the stat information associated with the znode.
+        sets the data associated with a node. 
     
         PARAMETERS:
         path: the name of the node. Expressed as a file name with slashes 
@@ -308,13 +307,95 @@ class ZKSession(object):
             return stat
         self._raise_exception(rc)
     
+    def set(self, path, data, version=-1):
+        """
+        sets the data associated with a node. See set2 function if
+        you require access to the stat information associated with the znode.
     
-    def set_acl(self):
-        zookeeper.aset_acl()
-        
-    def sync(self):
-        zookeeper.async()
-        zookeeper.get()
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+        data: the buffer holding data to be written to the node.
+    
+        (subsequent parameters are optional)
+        version: the expected version of the node. The function will fail if 
+        the actual version of the node does not match the expected version. 
+         If -1 is used the version check will not take place. 
+    
+        RETURNS:
+        OK status
+    
+        EXCEPTIONS:
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        BADVERSION expected version does not match actual version.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or 
+         AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out of 
+         memory
+        """
+        self.set2(path, data, version)
+        return zookeeper.OK
+    
+    def set_acl(self, path, version, acl):
+        """sets the acl associated with a node synchronously.
+    
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+        version: the expected version of the path.
+        acl: the acl to be set on the path. 
+    
+        RETURNS:
+        OK operation completed successfully
+        EXCEPTIONS:
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        INVALIDACL invalid ACL specified
+        BADVERSION expected version does not match actual version.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE 
+         or AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out 
+         of memory
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.aset_acl(self._zhandle, path, version, acl,
+                                functools.partial(generic_completion, 
+                                                  pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as void_completion
+        handle, rc = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return rc
+        self._raise_exception(rc)
+            
+    def sync(self, path):
+        """
+        Flush leader channel.
+        path: the name of the node. Expressed as a file name with slashes
+        separating ancestors of the node.
+         
+        Returns OK on success.
+        """
+        results = []
+        pc = utils.PipeCondition()        
+        ok = zookeeper.async(self._zhandle, path,
+                             functools.partial(generic_completion, 
+                                               pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as void_completion
+        handle, rc = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return rc
+        self._raise_exception(rc)
+            
         
     def __del__(self):
         self.close()
