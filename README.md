@@ -5,4 +5,5 @@ and watcher notifications. This package uses pipes to communicate between
 the main thread that runs eventlet and the completion threads to avoid
 any blocking calls in the green threads.
 
+The code is distributed in Apache 2 License.
 
