@@ -22,7 +22,7 @@ class ZKSession(object):
     
     __slots__ = ("_zhandle", )
     
-    def __init__(self, host, timeout=10):
+    def __init__(self, host, timeout=10, recv_timeout=10000, ident=(-1,"")):
         """
         This method creates a new handle and a zookeeper session that corresponds
         to that handle. Session establishment is asynchronous, meaning that the
@@ -36,7 +36,7 @@ class ZKSession(object):
         fn: the global watcher callback function. When notifications are
         triggered this function will be invoked.
         recv_timeout: 
-        (clientid, passwd)
+        ident = (clientid, passwd)
         clientid the id of a previously established session that this
         client will be reconnecting to. Clients can access the session id of an 
          established, valid,
@@ -51,12 +51,10 @@ class ZKSession(object):
         """
         self._zhandle = None
         pc = utils.PipeCondition()
-        def init_cb(handle, type_, stat, name):
-            '''Fired when connected to ZK, return call from another thread
-            '''
+        def init_watcher(handle, event_type, stat, path):
+            #called when init is successful
             pc.notify()
-        #TODO: recv_timeout, passwd
-        self._zhandle = zookeeper.init(host, init_cb)
+        self._zhandle = zookeeper.init(host, init_watcher, recv_timeout)
         pc.wait(timeout)
         
     def close(self):
@@ -444,7 +442,37 @@ def test():
     session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
     print session.get("/test")
     print 'done.'
-    print session.get("/test2")
+    session.set("/test", "def")
+    print session.get("/test")
+    test_queue(session)
+
+
+def test_queue(session):    
+    import recipes
+    q = recipes.ZKQueue(session, "/myqueue", [ZOO_OPEN_ACL_UNSAFE])
+    q.enqueue("Zoo")
+    q.enqueue("Keeper")
+    
+    def dequeue_thread():
+        while True:
+            value = q.dequeue()
+            print "from dequeue", value
+            if value == "EOF":
+                return
+    
+    def enqueue_thread():
+        for i in range(10):
+            q.enqueue("value%i" % (i,))
+            eventlet.sleep(1)
+        q.enqueue("EOF")
+    
+    dt = eventlet.spawn(dequeue_thread)
+    et = eventlet.spawn(enqueue_thread)
+    
+    
+    et.wait()
+    dt.wait()
+    
     
 if __name__=="__main__":
     test()
