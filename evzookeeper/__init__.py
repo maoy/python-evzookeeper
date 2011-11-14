@@ -61,9 +61,8 @@ class ZKSession(object):
         any reason, the returned zhandle_t will be invalid -- the zhandle_t 
         state will indicate the reason for failure (typically
         EXPIRED_SESSION_STATE).
-        
-        RETURNS:
-        If it fails to create a new zhandle the function throws an exception.
+        zklog_fd is the file descriptor to redirect zookeeper logs.
+        By default, it redirects to /dev/null
         """
         self._zhandle = None
         pc = utils.PipeCondition()
