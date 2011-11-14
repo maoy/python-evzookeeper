@@ -209,7 +209,7 @@ class ZKSession(object):
             return stat
         self._raise_exception(rc)
         
-    def get(self, path, watcher=None, bufferlen=1024*1024):
+    def get(self, path, watcher=None):
         """
         gets the data associated with a node synchronously.
         
@@ -220,16 +220,12 @@ class ZKSession(object):
         (subsequent parameters are optional)
         watcher: if not None, a watch will be set at the server to notify 
         the client if the node changes.
-        bufferlen: This value defaults to 1024*1024 - 1Mb. This method 
-         returns 
-        the minimum of bufferlen and the true length of the znode's 
-         data. 
     
         RETURNS:
         the (data, stat) tuple associated with the node
         """
         results = []
-        pc = utils.PipeCondition()        
+        pc = utils.PipeCondition()
         ok = zookeeper.aget(self._zhandle, path, watcher,
                                functools.partial(generic_completion, 
                                                  pc, results))                               
@@ -243,7 +239,28 @@ class ZKSession(object):
         self._raise_exception(rc)
 
     def get_acl(self, path):
-        zookeeper.aget_acl()
+        """
+        Gets the acl associated with a node.
+    
+        path: the name of the node. Expressed as a file name with slashes 
+        separating ancestors of the node.
+        
+        Return:
+        (acl, stat)
+        """
+        results = []
+        pc = utils.PipeCondition()
+        ok = zookeeper.aget_acl(self._zhandle, path,
+                               functools.partial(generic_completion, 
+                                                 pc, results))                               
+        assert ok == zookeeper.OK
+        pc.wait()
+        #unpack result as acl_completion
+        handle, rc, acl, stat = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return (acl, stat)
+        self._raise_exception(rc)
         
     def get_children(self, path, watcher=None):
         """
@@ -451,6 +468,7 @@ def test():
     print 'connected'
     session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
     print 'test-tmp created'
+    print "(acl,stat)=", session.get_acl("/test-tmp")
     try:
         session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
     except zookeeper.NodeExistsException:
