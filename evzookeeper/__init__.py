@@ -37,7 +37,8 @@ class ZKSession(object):
     
     __slots__ = ("_zhandle", )
     
-    def __init__(self, host, timeout=10, recv_timeout=10000, ident=(-1,"")):
+    def __init__(self, host, timeout=10, recv_timeout=10000, 
+                 ident=(-1,""), zklog_fd=None):
         """
         This method creates a new handle and a zookeeper session that corresponds
         to that handle. Session establishment is asynchronous, meaning that the
@@ -69,7 +70,10 @@ class ZKSession(object):
         def init_watcher(handle, event_type, stat, path):
             #called when init is successful
             pc.notify()
-        self._zhandle = zookeeper.init(host, init_watcher, recv_timeout)
+        if zklog_fd is None:
+            zklog_fd = open("/dev/null")
+        zookeeper.set_log_stream(zklog_fd)
+        self._zhandle = zookeeper.init(host, init_watcher, recv_timeout, ident)
         pc.wait(timeout)
         
     def close(self):
