@@ -14,9 +14,10 @@
 #    under the License.
 
 
-from eventlet import greenio
-import os
 import errno
+import os
+
+from eventlet import greenio
 from eventlet.hubs import trampoline
 from eventlet.support import get_errno
 
@@ -25,9 +26,11 @@ class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
     """
     enhance SocketDuckForFd with timeout
     """
+
     def __init__(self, fileno):
         self._timeout = None
         super(_SocketDuckForFdTimeout, self).__init__(fileno)
+
     def recv(self, buflen):
         trampoline(self, read=True, timeout=self._timeout)
         while True:
@@ -71,7 +74,8 @@ class TimeoutGreenPipe(greenio.GreenPipe):
 
 class PipeCondition(object):
     '''
-    A condition-variable like data structure implemented using pipes
+    A data structure similar in spirit to condition variable 
+    implemented using pipes
     
     Typical usage with eventlet:
     
