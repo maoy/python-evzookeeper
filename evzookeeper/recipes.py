@@ -17,7 +17,7 @@ import functools
 
 import zookeeper
 
-from evzookeeper import utils
+from evzookeeper import utils, ZOO_OPEN_ACL_UNSAFE
 
 class ZKQueue(object):
     '''
@@ -77,7 +77,7 @@ class Membership(object):
     '''
     Use EPHEMERAL zknodes to maintain a failure-aware node membership list
     '''
-    def __init__(self, session, basepath, acl=None):
+    def __init__(self, session, basepath, acl=[ZOO_OPEN_ACL_UNSAFE]):
         self._session = session
         self.basepath = basepath
         self.acl = acl
@@ -101,7 +101,8 @@ class Membership(object):
         """
         def watcher(pc, handle, event, state, path):
             pc.notify()
-        callback = watch_condition or functools.partial(watcher, watch_condition)
+        callback = watch_condition if watch_condition is None \
+            else functools.partial(watcher, watch_condition)
         children = self._session.\
             get_children(self.basepath, callback)
         return children
