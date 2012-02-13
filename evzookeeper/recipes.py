@@ -15,8 +15,9 @@
 
 import functools
 
-from evzookeeper import utils
 import zookeeper
+
+from evzookeeper import utils, ZOO_OPEN_ACL_UNSAFE
 
 class ZKQueue(object):
     '''
@@ -72,3 +73,40 @@ class ZKQueue(object):
             pc.wait(timeout)
 
 
+class Membership(object):
+    '''
+    Use EPHEMERAL zknodes to maintain a failure-aware node membership list
+    '''
+    def __init__(self, session, basepath, acl=[ZOO_OPEN_ACL_UNSAFE]):
+        self._session = session
+        self.basepath = basepath
+        self.acl = acl
+        try:
+            # make sure basepath exists
+            self._session.create(basepath, "ZKMembers", acl)
+        except zookeeper.NodeExistsException:
+            pass
+    
+    def join(self, name, value=''):
+        """Use @param name to join the membership"""
+        return self._session.create("%s/%s" % (self.basepath, name), value, 
+                                    self.acl, zookeeper.EPHEMERAL)
+        
+    def get_all(self, watch_condition=None):
+        """
+        @param watch_condition: a PipeCondition object if set. If the
+        membership changes, the condition will be set to trigger a callback
+        
+        @return: a list of node names 
+        """
+        def watcher(pc, handle, event, state, path):
+            pc.notify()
+        callback = watch_condition if watch_condition is None \
+            else functools.partial(watcher, watch_condition)
+        children = self._session.\
+            get_children(self.basepath, callback)
+        return children
+
+    def get(self, nodename):
+        """Get the value for a specific node"""
+        return self._session.get("%s/%s" % (self.basepath, nodename))
