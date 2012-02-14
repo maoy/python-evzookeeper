@@ -29,16 +29,22 @@ class NodeManager(object):
 
     def monitor(self):
         while 1:
-            self.pc.wait()
+            try:
+                self.pc.wait()
+            except Exception, e:
+                print e
             print "changed"
             self.pc = utils.PipeCondition()
-            print 'in monitor', self.membership.get_all(self.pc)
+            try:
+                print 'in monitor', self.membership.get_all(self.pc)
+            except Exception, e:
+                print e
         
 def demo():
     nm1 = NodeManager("node1")
     nm2 = NodeManager("node2")
     #print nm1.membership.get_all()
-    eventlet.sleep(10)
+    eventlet.sleep(1000)
     
 if __name__=="__main__":
     demo()

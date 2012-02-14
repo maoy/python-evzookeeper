@@ -1,4 +1,4 @@
-# Copyright (c) 2011 Yun Mao <yunmao at gmail dot com>.
+# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -41,27 +41,27 @@ class ZKSession(object):
                  ident=(-1,""), zklog_fd=None):
         """
         This method creates a new handle and a zookeeper session that corresponds
-        to that handle. Session establishment is asynchronous, meaning that the
-        session should not be considered established until (and unless) an
-        event of state CONNECTED_STATE is received.
-        PARAMETERS:
-        host: comma separated host:port pairs, each corresponding to a zk
+        to that handle. Session establishment is synchronous.
+        
+        @param host: comma separated host:port pairs, each corresponding to a zk
         server. e.g. '127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002'
         
         (subsequent parameters are optional)
-        fn: the global watcher callback function. When notifications are
-        triggered this function will be invoked.
-        recv_timeout: 
-        ident = (clientid, passwd)
+        
+        @param timeout: wait timeout seconds for the initial session establishment.
+        If fails, an exception will be thrown.
+        @param recv_timeout: ZK clients detects server failures in 2/3 of recv_timeout, 
+        and then it retries the same IP at every recv_timeout period if only one of 
+        ensemble is given.
+        @param ident: (clientid, passwd)
         clientid the id of a previously established session that this
         client will be reconnecting to. Clients can access the session id of an 
-         established, valid,
-        connection by calling zoo_client_id. If
+         established, valid, connection by calling zoo_client_id. If
         the specified clientid has expired, or if the clientid is invalid for 
         any reason, the returned zhandle_t will be invalid -- the zhandle_t 
         state will indicate the reason for failure (typically
         EXPIRED_SESSION_STATE).
-        zklog_fd is the file descriptor to redirect zookeeper logs.
+        @param zklog_fd: the file descriptor to redirect zookeeper logs.
         By default, it redirects to /dev/null
         """
         self._zhandle = None
