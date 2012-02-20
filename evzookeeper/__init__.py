@@ -285,6 +285,7 @@ class ZKSession(object):
          or AUTH_FAILED_STATE
         MARSHALLINGERROR - failed to marshall a request; possibly, out 
          of memory
+        ConnectionLossException
         """
         results = []
         pc = utils.PipeCondition()        

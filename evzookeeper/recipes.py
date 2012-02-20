@@ -84,7 +84,7 @@ class Membership(object):
         self._name = None
         try:
             # make sure basepath exists
-            self._session.create(basepath, "ZKMembers", acl)
+            self._session.create(basepath, "ZKMembers", self.acl)
         except zookeeper.NodeExistsException:
             pass
     

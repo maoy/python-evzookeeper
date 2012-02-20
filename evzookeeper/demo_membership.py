@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
+
 import eventlet
 import recipes
 
@@ -20,7 +22,7 @@ from evzookeeper import ZKSession, utils
 
 class NodeManager(object):
     def __init__(self, name):
-        self._session = ZKSession("localhost:2181", 10)
+        self._session = ZKSession("localhost:2181", 10, zklog_fd=sys.stderr)
         self.membership = recipes.Membership(self._session, "/basedir")
         self.pc = utils.PipeCondition()
         self.membership.join(name)
@@ -38,7 +40,7 @@ class NodeManager(object):
             try:
                 print 'in monitor', self.membership.get_all(self.pc)
             except Exception, e:
-                print e
+                print 'exception is', e, type(e)
         
 def demo():
     nm1 = NodeManager("node1")
