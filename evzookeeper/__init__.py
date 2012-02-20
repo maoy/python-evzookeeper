@@ -52,7 +52,8 @@ class ZKSession(object):
         If fails, an exception will be thrown.
         @param recv_timeout: ZK clients detects server failures in 2/3 of recv_timeout, 
         and then it retries the same IP at every recv_timeout period if only one of 
-        ensemble is given.
+        ensemble is given. If more than two ensemble IP are given, ZK clients will 
+        try next IP immediately.
         @param ident: (clientid, passwd)
         clientid the id of a previously established session that this
         client will be reconnecting to. Clients can access the session id of an 

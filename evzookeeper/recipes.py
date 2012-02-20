@@ -77,10 +77,11 @@ class Membership(object):
     '''
     Use EPHEMERAL zknodes to maintain a failure-aware node membership list
     '''
-    def __init__(self, session, basepath, acl=[ZOO_OPEN_ACL_UNSAFE]):
+    def __init__(self, session, basepath, acl=None):
         self._session = session
         self.basepath = basepath
-        self.acl = acl
+        self.acl = acl if acl else [ZOO_OPEN_ACL_UNSAFE]
+        self._name = None
         try:
             # make sure basepath exists
             self._session.create(basepath, "ZKMembers", acl)
@@ -88,9 +89,19 @@ class Membership(object):
             pass
     
     def join(self, name, value=''):
-        """Use @param name to join the membership"""
+        """Join the membership
+        @param name: name in the membership
+        @param value: optional
+        """
+        self._name = name
         return self._session.create("%s/%s" % (self.basepath, name), value, 
                                     self.acl, zookeeper.EPHEMERAL)
+    
+    def leave(self):
+        if self._name:
+            self._session.delete("%s/%s" % (self.basepath, self._name))
+            return True
+        return False
         
     def get_all(self, watch_condition=None):
         """
