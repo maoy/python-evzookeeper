@@ -103,7 +103,8 @@ class Membership(object):
         self.conn_spc = conn_spc
         self.monitor_pc = utils.StatePipeCondition()
         if self._session.is_connected():
-            self._on_connected()
+            conn_spc.set_and_notify((None, zookeeper.SESSION_EVENT,
+                                    zookeeper.CONNECTED_STATE, ''))
         eventlet.spawn(self.watch_connection)
         eventlet.spawn(self.watch_membership)
 
@@ -167,21 +168,21 @@ class Membership(object):
 
     def _refresh(self):
         # if another node has the same name, we'll get an exception
-        if self.join():
+        if self._join():
             self.monitor_pc.set_and_notify((zookeeper.SESSION_EVENT, 
                                             zookeeper.CONNECTED_STATE))
 
-    def join(self):
+    def _join(self):
         """Make sure the ephemeral node is in ZK, assuming the session
         is connected. 
+        Called periodically when the session is in connected state or 
+        when initially connected
         
         @return: True if the node didn't exist and was created;
         False if already joined; 
         or raise RuntimeError if another session is occupying
         the node currently.
-        
-        Called periodically when the session is in connected state or 
-        when initially connected"""
+        """
         # make sure base path exists
         try:
             self._session.create(self.basepath, "ZKMembers", self.acl)
@@ -210,7 +211,7 @@ class Membership(object):
     def _on_disconnected(self):
         LOG.error("recipes.Membership disconnected on %s", self._name)
     
-    def leave(self):
+    def _leave(self):
         if self._name:
             self._session.delete("%s/%s" % (self.basepath, self._name))
             return True
