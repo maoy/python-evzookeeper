@@ -1,4 +1,4 @@
-# Copyright (c) 2011 Yun Mao <yunmao at gmail dot com>.
+# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,69 +12,102 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import os
+import functools
+import logging
 
 import eventlet
 import zookeeper
-import os
-import functools
 
 from evzookeeper import utils
 
 ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
 
-def generic_completion(pc, results, *args):
-    """
-    used as the async completion function
-    pc: a PipeCondition object to notify main thread
-    results: an empty list to send result back
+LOG = logging.getLogger("evzookeeper")
+
+def generic_completion(spc, *args):
+    """The default async completion function
+    @param spc: a StatePipeCondition object to notify main thread
     *args: depends on the completion function
+
+    Usually, the arguments are handle, event, state, path
+    event is one of CHILD_EVENT, DELETED_EVENT, CHANGED_EVENT,
+    CREATED_EVENT, SESSION_EVENT, NOTWATCHING_EVENT
+    
+    state is one of INVALIDSTATE, AUTH_FAILED_STATE,
+    CONNECTING_STATE, CONNECTED_STATE,
+    ASSOCIATING_STATE, EXPIRED_SESSION_STATE
     """
-    assert not results
-    results.extend(args)
-    pc.notify()
+    spc.set_and_notify(args)
     
 class ZKSession(object):
     
-    __slots__ = ("_zhandle", )
+    __slots__ = ("_zhandle", "_host", "_recv_timeout", "_ident", "_zklog_fd", "_conn_cbs")
     
-    def __init__(self, host, timeout=10, recv_timeout=10000, 
-                 ident=(-1,""), zklog_fd=None):
+    def __init__(self, host, timeout=None, recv_timeout=10000, ident=(-1, ""), 
+                 zklog_fd=None, init_cbs=None):
         """
-        This method creates a new handle and a zookeeper session that corresponds
-        to that handle. Session establishment is asynchronous, meaning that the
-        session should not be considered established until (and unless) an
-        event of state CONNECTED_STATE is received.
-        PARAMETERS:
-        host: comma separated host:port pairs, each corresponding to a zk
+        @param host: comma separated host:port pairs, each corresponding to a zk
         server. e.g. '127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002'
-        
+
         (subsequent parameters are optional)
-        fn: the global watcher callback function. When notifications are
-        triggered this function will be invoked.
-        recv_timeout: 
-        ident = (clientid, passwd)
+
+        @param timeout: None by default means asynchronous session establishment.
+        or the time to wait until the session is established.
+
+        @param recv_timeout: ZK clients detects server failures in 2/3 of recv_timeout, 
+        and then it retries the same IP at every recv_timeout period if only one of 
+        ensemble is given. If more than two ensemble IP are given, ZK clients will 
+        try next IP immediately.
+        @param ident: (clientid, passwd)
         clientid the id of a previously established session that this
         client will be reconnecting to. Clients can access the session id of an 
-         established, valid,
-        connection by calling zoo_client_id. If
+         established, valid, connection by calling zoo_client_id. If
         the specified clientid has expired, or if the clientid is invalid for 
         any reason, the returned zhandle_t will be invalid -- the zhandle_t 
         state will indicate the reason for failure (typically
         EXPIRED_SESSION_STATE).
-        zklog_fd is the file descriptor to redirect zookeeper logs.
+        @param zklog_fd: the file descriptor to redirect zookeeper logs.
         By default, it redirects to /dev/null
+
+        @param init_cbs: initial callback objects of type StatePipeCondition
         """
-        self._zhandle = None
-        pc = utils.PipeCondition()
-        def init_watcher(handle, event_type, stat, path):
-            #called when init is successful
-            pc.notify()
+        self._host = host
+        self._recv_timeout = recv_timeout
+        self._ident = ident
         if zklog_fd is None:
             zklog_fd = open("/dev/null")
-        zookeeper.set_log_stream(zklog_fd)
-        self._zhandle = zookeeper.init(host, init_watcher, recv_timeout, ident)
-        pc.wait(timeout)
-        
+        self._zklog_fd = zklog_fd
+        self._zhandle = None
+        timeout_spc = utils.StatePipeCondition()
+        self._conn_cbs = set( [ timeout_spc ])
+        if init_cbs:
+            self._conn_cbs.update(init_cbs)
+
+        def init_watcher(handle, event_type, state, path):
+            #called when init is successful or connection state is changed
+            LOG.debug("zookeeper connection state changed to %d.", state)
+            for cb in self._conn_cbs:
+                try:
+                    cb.set_and_notify((handle, event_type, state, path))
+                except:
+                    LOG.exception("something was wrong when notifying a connection callback")
+        zookeeper.set_log_stream(self._zklog_fd)
+        self._zhandle = zookeeper.init(self._host, init_watcher, self._recv_timeout, 
+                                       self._ident)
+        if timeout is not None:
+            timeout_spc.wait_and_get(timeout=timeout)
+        self._conn_cbs.remove(timeout_spc)
+    
+    def add_connection_callback(self, callback):
+        """
+        @param callback: StatePipeCondition object
+        """
+        self._conn_cbs.add(callback)
+
+    def is_connected(self):
+        return self._zhandle is not None and self.state()==zookeeper.CONNECTED_STATE
+    
     def close(self):
         """
         close the handle. potentially a blocking call?
@@ -125,13 +158,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.acreate(self._zhandle, path, value, acl, flags,
                                functools.partial(generic_completion, 
-                                                 pc, results))
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as string_completion
         handle, rc, real_path = results
         assert handle == self._zhandle
@@ -166,13 +198,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshal a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.adelete(self._zhandle, path, version, 
                                functools.partial(generic_completion, 
-                                                 pc, results))
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -195,13 +226,12 @@ class ZKSession(object):
         
         Return: stat if the node exists    
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aexists(self._zhandle, path, watch,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -224,13 +254,12 @@ class ZKSession(object):
         RETURNS:
         the (data, stat) tuple associated with the node
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.aget(self._zhandle, path, watcher,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as data_completion
         handle, rc, data, stat = results
         assert handle == self._zhandle
@@ -248,13 +277,12 @@ class ZKSession(object):
         Return:
         (acl, stat)
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.aget_acl(self._zhandle, path,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as acl_completion
         handle, rc, acl, stat = results
         assert handle == self._zhandle
@@ -284,14 +312,14 @@ class ZKSession(object):
          or AUTH_FAILED_STATE
         MARSHALLINGERROR - failed to marshall a request; possibly, out 
          of memory
+        ConnectionLossException
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aget_children(self._zhandle, path, watcher,
                                      functools.partial(generic_completion, 
-                                                       pc, results))                               
+                                                       pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as strings_completion
         handle, rc, children = results
         assert handle == self._zhandle
@@ -326,13 +354,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aset(self._zhandle, path, data, version,
                                      functools.partial(generic_completion, 
-                                                       pc, results))                               
+                                                       pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -393,20 +420,22 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out 
          of memory
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aset_acl(self._zhandle, path, version, acl,
                                 functools.partial(generic_completion, 
-                                                  pc, results))                               
+                                                  pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
         if rc == zookeeper.OK:
             return rc
         self._raise_exception(rc)
-            
+    
+    def state(self):
+        return zookeeper.state(self._zhandle)
+
     def sync(self, path):
         """
         Flush leader channel.
@@ -415,13 +444,12 @@ class ZKSession(object):
          
         Returns OK on success.
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()
         ok = zookeeper.async(self._zhandle, path,
                              functools.partial(generic_completion, 
-                                               pc, results))                               
+                                               pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -461,55 +489,27 @@ class ZKSession(object):
                     zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
                     zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
                     }
-    
-        
-def test():
-    session = ZKSession("localhost:2181", 10)
-    print 'connected'
-    session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
-    print 'test-tmp created'
-    print "(acl,stat)=", session.get_acl("/test-tmp")
-    try:
-        session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
-    except zookeeper.NodeExistsException:
-        pass
-    print session.exists("/test")
-    session.delete("/test")
-    session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
-    print session.get("/test")
-    print 'done.'
-    session.set("/test", "def")
-    print session.get("/test")
-    test_queue(session)
 
 
-def test_queue(session):    
-    import recipes
-    q = recipes.ZKQueue(session, "/myqueue", [ZOO_OPEN_ACL_UNSAFE])
-    q.enqueue("Zoo")
-    q.enqueue("Keeper")
-    
-    def dequeue_thread():
-        while True:
-            value = q.dequeue()
-            print "from dequeue", value
-            if value == "EOF":
-                return
-    
-    def enqueue_thread():
-        for i in range(10):
-            q.enqueue("value%i" % (i,))
-            eventlet.sleep(1)
-        q.enqueue("EOF")
-    
-    dt = eventlet.spawn(dequeue_thread)
-    et = eventlet.spawn(enqueue_thread)
-    
-    
-    et.wait()
-    dt.wait()
-    
     
 if __name__=="__main__":
-    test()
+    def demo():
+        session = ZKSession("localhost:2181", timeout=10)
+        print 'connected'
+        session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
+        print 'test-tmp created'
+        print "(acl,stat)=", session.get_acl("/test-tmp")
+        try:
+            session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
+        except zookeeper.NodeExistsException:
+            pass
+        print session.exists("/test")
+        session.delete("/test")
+        session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
+        print session.get("/test")
+        print 'done.'
+        session.set("/test", "def")
+        print session.get("/test")
+
+    demo()
     

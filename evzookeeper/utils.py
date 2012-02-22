@@ -82,7 +82,7 @@ class PipeCondition(object):
     create the object in the main thread, call wait(), then
     call notify() in another OS thread. 
     
-    Right now notify() can only be used once
+    Right now notify() can only be used once.
     '''
 
     def __init__(self):
@@ -90,23 +90,30 @@ class PipeCondition(object):
         self._wfd = wfd
         self._greenpipe = TimeoutGreenPipe(rfd, 'rb', 0)
         
-    def notify(self):
+    def notify(self, quiet=True):
+        """Notify the other OS thread.
+        
+        @param quiet: if True, do not raise any exceptions. 
+        """
         try:
-            os.write(self._wfd, "X") #write an arbitrary byte
+            if self._wfd is not None:
+                os.write(self._wfd, "X") #write an arbitrary byte
         except IOError, e:
             if e.errno == errno.EPIPE:
                 # the waiter fd is closed
                 pass
             else:
                 # TODO: probably need to retry certain errors
-                raise e
-        self._close_wfd()
+                if not quiet:
+                    raise e
+        #finally:
+        #    self._close_wfd()
 
     def wait(self, timeout=None):
         """
-        timeout: in second
-        return None if notified within timeout
-        or raise an exception eventlet.timeout.Timeout
+        @param timeout: in second
+        @return: None if notified within timeout
+        or raise an exception of eventlet.timeout.Timeout
         """
         self._greenpipe.set_timeout(timeout)
         value = self._greenpipe.read(1)
@@ -128,3 +135,28 @@ class PipeCondition(object):
         finally:
             self._close_rfd()
         
+class StatePipeCondition(PipeCondition):
+    '''
+    Typical usage with eventlet:
+    
+    create the object in the main thread, call wait_and_get(), then
+     in another OS thread, call notify(state=state).
+
+    
+    Right now notify() can only be used once.
+    '''
+    def __init__(self):
+        PipeCondition.__init__(self)
+        self._state = None
+        
+    def set_and_notify(self, state, quiet=True):
+        """Set state and notify the other OS thread.
+        
+        @param quiet: if True, do not raise any exceptions. 
+        """
+        self._state = state
+        return PipeCondition.notify(self, quiet=quiet)
+        
+    def wait_and_get(self, timeout=None):
+        self.wait(timeout)
+        return self._state
