@@ -98,13 +98,13 @@ class Membership(object):
         self._cb_func = cb_func or (lambda x: None)
         self.joined = False
         self._members = []
-        spc = utils.StatePipeCondition()
-        self._session.add_connection_callback(spc)
-        self.spc = spc
+        conn_spc = utils.StatePipeCondition()
+        self._session.add_connection_callback(conn_spc)
+        self.conn_spc = conn_spc
+        self.monitor_pc = utils.StatePipeCondition()
         if self._session.is_connected():
             self._on_connected()
         eventlet.spawn(self.watch_connection)
-        self.monitor_pc = utils.StatePipeCondition()
         eventlet.spawn(self.watch_membership)
 
     def watch_connection(self):
@@ -115,7 +115,7 @@ class Membership(object):
             timeout = False
             state = None
             try:
-                _, _, state, _ = self.spc.wait_and_get(
+                _, _, state, _ = self.conn_spc.wait_and_get(
                     timeout=self.REFRESH_INTERVAL)
             except eventlet.Timeout:
                 timeout = True
