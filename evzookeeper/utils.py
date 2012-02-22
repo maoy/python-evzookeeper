@@ -106,8 +106,8 @@ class PipeCondition(object):
                 # TODO: probably need to retry certain errors
                 if not quiet:
                     raise e
-        finally:
-            self._close_wfd()
+        #finally:
+        #    self._close_wfd()
 
     def wait(self, timeout=None):
         """
@@ -135,3 +135,28 @@ class PipeCondition(object):
         finally:
             self._close_rfd()
         
+class StatePipeCondition(PipeCondition):
+    '''
+    Typical usage with eventlet:
+    
+    create the object in the main thread, call wait_and_get(), then
+     in another OS thread, call notify(state=state).
+
+    
+    Right now notify() can only be used once.
+    '''
+    def __init__(self):
+        PipeCondition.__init__(self)
+        self._state = None
+        
+    def set_and_notify(self, state, quiet=True):
+        """Set state and notify the other OS thread.
+        
+        @param quiet: if True, do not raise any exceptions. 
+        """
+        self._state = state
+        return PipeCondition.notify(self, quiet=quiet)
+        
+    def wait_and_get(self, timeout=None):
+        self.wait(timeout)
+        return self._state

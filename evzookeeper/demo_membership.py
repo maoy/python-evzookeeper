@@ -14,38 +14,32 @@
 #    under the License.
 
 import sys
+import logging
 
+logging.basicConfig(level=logging.DEBUG)
 import eventlet
 import recipes
 
-from evzookeeper import ZKSession, utils
+from evzookeeper import ZKSession
 
 class NodeManager(object):
     def __init__(self, name):
-        self._session = ZKSession("localhost:2181", 10, zklog_fd=sys.stderr)
-        self.membership = recipes.Membership(self._session, "/basedir")
-        self.pc = utils.PipeCondition()
-        self.membership.join(name)
-        print 'in __init__', self.membership.get_all(self.pc)
-        eventlet.spawn(self.monitor)
+        self.name = name
+        self._session = ZKSession("localhost:2181", 10)#, zklog_fd=sys.stderr)
+        self.membership = recipes.Membership(self._session, "/basedir", name,
+                                             cb_func=self.monitor)
 
-    def monitor(self):
-        while 1:
-            try:
-                self.pc.wait()
-            except Exception, e:
-                print e
-            print "changed"
-            self.pc = utils.PipeCondition()
-            try:
-                print 'in monitor', self.membership.get_all(self.pc)
-            except Exception, e:
-                print 'exception is', e, type(e)
+    def monitor(self, members):
+            print "in monitor", self.name, members
+            
         
 def demo():
     nm1 = NodeManager("node1")
     nm2 = NodeManager("node2")
-    #print nm1.membership.get_all()
+    eventlet.sleep(5)
+    nm3 = NodeManager("node3")
+    eventlet.sleep(60)
+    nm4 = NodeManager("node4")
     eventlet.sleep(1000)
     
 if __name__=="__main__":

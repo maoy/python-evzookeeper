@@ -12,44 +12,48 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import os
+import functools
+import logging
 
 import eventlet
 import zookeeper
-import os
-import functools
 
 from evzookeeper import utils
 
 ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
 
-def generic_completion(pc, results, *args):
-    """
-    used as the async completion function
-    pc: a PipeCondition object to notify main thread
-    results: an empty list to send result back
+LOG = logging.getLogger("evzookeeper")
+
+def generic_completion(spc, *args):
+    """The default async completion function
+    @param spc: a StatePipeCondition object to notify main thread
     *args: depends on the completion function
+
+    Usually, the arguments are handle, event, state, path
+    event is one of CHILD_EVENT, DELETED_EVENT, CHANGED_EVENT,
+    CREATED_EVENT, SESSION_EVENT, NOTWATCHING_EVENT
+    
+    state is one of INVALIDSTATE
+AUTH_FAILED_STATE
+CONNECTING_STATE
+CONNECTED_STATE
+ASSOCIATING_STATE
+EXPIRED_SESSION_STATE
     """
-    assert not results
-    results.extend(args)
-    pc.notify()
+    spc.set_and_notify(args)
     
 class ZKSession(object):
     
-    __slots__ = ("_zhandle", )
+    __slots__ = ("_zhandle", "_host", "_recv_timeout", "_ident", "_zklog_fd", "_conn_cbs")
     
-    def __init__(self, host, timeout=10, recv_timeout=10000, 
-                 ident=(-1,""), zklog_fd=None):
+    def __init__(self, host, recv_timeout=10000, ident=(-1, ""), zklog_fd=None):
         """
-        This method creates a new handle and a zookeeper session that corresponds
-        to that handle. Session establishment is synchronous.
-        
         @param host: comma separated host:port pairs, each corresponding to a zk
         server. e.g. '127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002'
-        
+
         (subsequent parameters are optional)
-        
-        @param timeout: wait timeout seconds for the initial session establishment.
-        If fails, an exception will be thrown.
+
         @param recv_timeout: ZK clients detects server failures in 2/3 of recv_timeout, 
         and then it retries the same IP at every recv_timeout period if only one of 
         ensemble is given. If more than two ensemble IP are given, ZK clients will 
@@ -64,18 +68,38 @@ class ZKSession(object):
         EXPIRED_SESSION_STATE).
         @param zklog_fd: the file descriptor to redirect zookeeper logs.
         By default, it redirects to /dev/null
+
         """
-        self._zhandle = None
-        pc = utils.PipeCondition()
-        def init_watcher(handle, event_type, stat, path):
-            #called when init is successful
-            pc.notify()
+        self._host = host
+        self._recv_timeout = recv_timeout
+        self._ident = ident
         if zklog_fd is None:
             zklog_fd = open("/dev/null")
-        zookeeper.set_log_stream(zklog_fd)
-        self._zhandle = zookeeper.init(host, init_watcher, recv_timeout, ident)
-        pc.wait(timeout)
-        
+        self._zklog_fd = zklog_fd
+        self._zhandle = None
+        self._conn_cbs = []
+    
+    def add_connection_callback(self, callback):
+        """
+        @param callback: StatePipeCondition object
+        """
+        self._conn_cbs.append(callback)
+
+        def init_watcher(handle, event_type, state, path):
+            #called when init is successful or connection state is changed
+            LOG.debug("zookeeper connection state changed to %d.", state)
+            for cb in self._conn_cbs:
+                try:
+                    cb.set_and_notify((handle, event_type, state, path))
+                except:
+                    LOG.exception("something was wrong when notifying a connection callback")
+        zookeeper.set_log_stream(self._zklog_fd)
+        self._zhandle = zookeeper.init(self._host, init_watcher, self._recv_timeout, 
+                                       self._ident)
+    
+    def is_connected(self):
+        return self._zhandle is not None and self.state()==zookeeper.CONNECTED_STATE
+    
     def close(self):
         """
         close the handle. potentially a blocking call?
@@ -126,13 +150,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.acreate(self._zhandle, path, value, acl, flags,
                                functools.partial(generic_completion, 
-                                                 pc, results))
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as string_completion
         handle, rc, real_path = results
         assert handle == self._zhandle
@@ -167,13 +190,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshal a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.adelete(self._zhandle, path, version, 
                                functools.partial(generic_completion, 
-                                                 pc, results))
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -196,13 +218,12 @@ class ZKSession(object):
         
         Return: stat if the node exists    
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aexists(self._zhandle, path, watch,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -225,13 +246,12 @@ class ZKSession(object):
         RETURNS:
         the (data, stat) tuple associated with the node
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.aget(self._zhandle, path, watcher,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as data_completion
         handle, rc, data, stat = results
         assert handle == self._zhandle
@@ -249,13 +269,12 @@ class ZKSession(object):
         Return:
         (acl, stat)
         """
-        results = []
-        pc = utils.PipeCondition()
+        pc = utils.StatePipeCondition()
         ok = zookeeper.aget_acl(self._zhandle, path,
                                functools.partial(generic_completion, 
-                                                 pc, results))                               
+                                                 pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as acl_completion
         handle, rc, acl, stat = results
         assert handle == self._zhandle
@@ -287,13 +306,12 @@ class ZKSession(object):
          of memory
         ConnectionLossException
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aget_children(self._zhandle, path, watcher,
                                      functools.partial(generic_completion, 
-                                                       pc, results))                               
+                                                       pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as strings_completion
         handle, rc, children = results
         assert handle == self._zhandle
@@ -328,13 +346,12 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out of 
          memory
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aset(self._zhandle, path, data, version,
                                      functools.partial(generic_completion, 
-                                                       pc, results))                               
+                                                       pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -395,20 +412,22 @@ class ZKSession(object):
         MARSHALLINGERROR - failed to marshall a request; possibly, out 
          of memory
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()        
         ok = zookeeper.aset_acl(self._zhandle, path, version, acl,
                                 functools.partial(generic_completion, 
-                                                  pc, results))                               
+                                                  pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
         if rc == zookeeper.OK:
             return rc
         self._raise_exception(rc)
-            
+    
+    def state(self):
+        return zookeeper.state(self._zhandle)
+
     def sync(self, path):
         """
         Flush leader channel.
@@ -417,13 +436,12 @@ class ZKSession(object):
          
         Returns OK on success.
         """
-        results = []
-        pc = utils.PipeCondition()        
+        pc = utils.StatePipeCondition()
         ok = zookeeper.async(self._zhandle, path,
                              functools.partial(generic_completion, 
-                                               pc, results))                               
+                                               pc))
         assert ok == zookeeper.OK
-        pc.wait()
+        results = pc.wait_and_get()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle

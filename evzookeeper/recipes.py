@@ -14,10 +14,15 @@
 #    under the License.
 
 import functools
+import logging
+import random
 
+import eventlet
 import zookeeper
 
 from evzookeeper import utils, ZOO_OPEN_ACL_UNSAFE
+
+LOG = logging.getLogger("evzookeeper.recipes")
 
 class ZKQueue(object):
     '''
@@ -77,25 +82,133 @@ class Membership(object):
     '''
     Use EPHEMERAL zknodes to maintain a failure-aware node membership list
     '''
-    def __init__(self, session, basepath, acl=None):
+    REFRESH_INTERVAL = 10
+
+    def __init__(self, session, basepath, name, acl=None,
+                 cb_func=None):
+        """Join the membership
+        @param cb_func: when the membership changes, callback_func is called 
+        with the new membership list in another green thread 
+        """
         self._session = session
         self.basepath = basepath
         self.acl = acl if acl else [ZOO_OPEN_ACL_UNSAFE]
-        self._name = None
+        self._name = name
+        self._session_token = str(random.random())
+        self._cb_func = cb_func or (lambda x: None)
+        self.joined = False
+        self._members = []
+        spc = utils.StatePipeCondition()
+        self._session.add_connection_callback(spc)
+        self.spc = spc
+        if self._session.is_connected():
+            self._on_connected()
+        eventlet.spawn(self.watch_connection)
+        self.monitor_pc = utils.StatePipeCondition()
+        eventlet.spawn(self.watch_membership)
+
+    def watch_connection(self):
+        """Runs in a green thread to periodically check connection state,
+        and makes sure that the zknode is in place.
+        """
+        while 1:
+            timeout = False
+            state = None
+            try:
+                _, _, state, _ = self.spc.wait_and_get(
+                    timeout=self.REFRESH_INTERVAL)
+            except eventlet.Timeout:
+                timeout = True
+            try:
+                if timeout:
+                    if self._session.is_connected():
+                        self._refresh()
+                else:
+                    if state == zookeeper.CONNECTED_STATE:
+                        self._on_connected()
+                    else:
+                        self._on_disconnected()
+            except RuntimeError:
+                pass
+    
+    def _safe_callback(self):
         try:
-            # make sure basepath exists
-            self._session.create(basepath, "ZKMembers", self.acl)
+            return self._cb_func(self._members)
+        except Exception:
+            LOG.exception("ignoring unexpected callback function exception")
+
+    def watch_membership(self):
+        """Runs in a green thread to get all members."""
+        while 1:
+            event, state = self.monitor_pc.wait_and_get()
+            if event == zookeeper.SESSION_EVENT and \
+                    state != zookeeper.CONNECTED_STATE:
+                # disconnected
+                self.joined = False
+                self._members = []
+            else:
+                self._members = self._get_members()
+            self._safe_callback()
+
+    def _get_members(self):
+        try:
+            def watcher(spc, handle, event, state, path):
+                LOG.debug("get_all watcher %s, %s, %s, %s", handle, event, state, path)
+                spc.set_and_notify((event, state))
+            callback = functools.partial(watcher, self.monitor_pc)
+            return self._session.get_children(self.basepath, callback)
+        except Exception:
+            LOG.exception("in Membership.get_all")
+            return []
+
+    def _on_connected(self):
+        LOG.debug("recipes.Membership connected on %s", self._name)
+        self._refresh()
+
+    def _refresh(self):
+        # if another node has the same name, we'll get an exception
+        if self.join():
+            self.monitor_pc.set_and_notify((zookeeper.SESSION_EVENT, 
+                                            zookeeper.CONNECTED_STATE))
+
+    def join(self):
+        """Make sure the ephemeral node is in ZK, assuming the session
+        is connected. 
+        
+        @return: True if the node didn't exist and was created;
+        False if already joined; 
+        or raise RuntimeError if another session is occupying
+        the node currently.
+        
+        Called periodically when the session is in connected state or 
+        when initially connected"""
+        # make sure base path exists
+        try:
+            self._session.create(self.basepath, "ZKMembers", self.acl)
         except zookeeper.NodeExistsException:
             pass
-    
-    def join(self, name, value=''):
-        """Join the membership
-        @param name: name in the membership
-        @param value: optional
-        """
-        self._name = name
-        return self._session.create("%s/%s" % (self.basepath, name), value, 
-                                    self.acl, zookeeper.EPHEMERAL)
+        
+        path = "%s/%s" % (self.basepath, self._name)
+        try:
+            self._session.create(path, self._session_token, self.acl, 
+                                 zookeeper.EPHEMERAL)
+            LOG.debug("created zknode %s", path)
+            if self.joined:
+                LOG.warn("node %s successfully created even after joined. data loss?", 
+                         path)
+            self.joined = True        
+            return True
+        except zookeeper.NodeExistsException:
+            (data, _) = self._session.get(path)
+            if data != self._session_token:
+                LOG.critical("Duplicated names %s with different session id",
+                             self._name)
+                raise RuntimeError("Duplicated membership name %s" % self._name)
+            # otherwise, node is already there correctly
+        return False
+
+    def _on_disconnected(self):
+        LOG.error("recipes.Membership disconnected on %s", self._name)
     
     def leave(self):
         if self._name:
@@ -103,21 +216,7 @@ class Membership(object):
             return True
         return False
         
-    def get_all(self, watch_condition=None):
-        """
-        @param watch_condition: a PipeCondition object if set. If the
-        membership changes, the condition will be set to trigger a callback
-        
-        @return: a list of node names 
-        """
-        def watcher(pc, handle, event, state, path):
-            pc.notify()
-        callback = watch_condition if watch_condition is None \
-            else functools.partial(watcher, watch_condition)
-        children = self._session.\
-            get_children(self.basepath, callback)
-        return children
+    def get_all(self):
+        """@return: a list of node names"""
+        return self._members
 
-    def get(self, nodename):
-        """Get the value for a specific node"""
-        return self._session.get("%s/%s" % (self.basepath, nodename))
