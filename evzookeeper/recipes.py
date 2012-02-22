@@ -154,7 +154,6 @@ class Membership(object):
     def _get_members(self):
         try:
             def watcher(spc, handle, event, state, path):
-                LOG.debug("get_all watcher %s, %s, %s, %s", handle, event, state, path)
                 spc.set_and_notify((event, state))
             callback = functools.partial(watcher, self.monitor_pc)
             return self._session.get_children(self.basepath, callback)
