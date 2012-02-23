@@ -1,4 +1,4 @@
-# Copyright (c) 2011 Yun Mao <yunmao at gmail dot com>.
+# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -80,14 +80,26 @@ class ZKQueue(object):
 
 class Membership(object):
     '''
-    Use EPHEMERAL zknodes to maintain a failure-aware node membership list
+    Use ephemeral zknodes to maintain a failure-aware node membership list
+    
+    ZooKeeper data structure:
+    /basepath = "ZKMembers"
+    /basepath/member1 = session_token1
+    /basepath/member2 = session_token2
+    ...
+    Each member has a ephemeral zknode with value as a randomly generated number
+    as unique session token.
     '''
     REFRESH_INTERVAL = 10
 
-    def __init__(self, session, basepath, name, acl=None,
-                 cb_func=None):
+    def __init__(self, session, basepath, name, acl=None, cb_func=None):
         """Join the membership
-        @param cb_func: when the membership changes, callback_func is called 
+        
+        @param session: a ZKSession object
+        @param basepath: the parent dir for membership zknodes.
+        @param name: name of this member
+        @param acl: access control list, by default [ZOO_OPEN_ACL_UNSAFE] is used
+        @param cb_func: when the membership changes, cb_func is called 
         with the new membership list in another green thread 
         """
         self._session = session
@@ -105,10 +117,10 @@ class Membership(object):
         if self._session.is_connected():
             conn_spc.set_and_notify((None, zookeeper.SESSION_EVENT,
                                     zookeeper.CONNECTED_STATE, ''))
-        eventlet.spawn(self.watch_connection)
-        eventlet.spawn(self.watch_membership)
+        eventlet.spawn(self._watch_connection)
+        eventlet.spawn(self._watch_membership)
 
-    def watch_connection(self):
+    def _watch_connection(self):
         """Runs in a green thread to periodically check connection state,
         and makes sure that the zknode is in place.
         """
@@ -128,7 +140,7 @@ class Membership(object):
                     if state == zookeeper.CONNECTED_STATE:
                         self._on_connected()
                     else:
-                        self._on_disconnected()
+                        self._on_disconnected(state)
             except RuntimeError:
                 pass
     
@@ -138,7 +150,7 @@ class Membership(object):
         except Exception:
             LOG.exception("ignoring unexpected callback function exception")
 
-    def watch_membership(self):
+    def _watch_membership(self):
         """Runs in a green thread to get all members."""
         while 1:
             event, state = self.monitor_pc.wait_and_get()
@@ -207,9 +219,13 @@ class Membership(object):
             # otherwise, node is already there correctly
         return False
 
-    def _on_disconnected(self):
-        LOG.error("recipes.Membership disconnected on %s", self._name)
-    
+    def _on_disconnected(self, state):
+        LOG.error("Membership disconnected on %s with state %s",
+                  self._name, state)
+        if state==zookeeper.EXPIRED_SESSION_STATE:
+            LOG.debug("Membership session expired. Try reconnect")
+            self._session.connect()
+
     def _leave(self):
         if self._name:
             self._session.delete("%s/%s" % (self.basepath, self._name))

@@ -1,4 +1,4 @@
-# Copyright (c) 2011 Yun Mao <yunmao at gmail dot com>.
+# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may

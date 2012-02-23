@@ -79,26 +79,40 @@ class ZKSession(object):
             zklog_fd = open("/dev/null")
         self._zklog_fd = zklog_fd
         self._zhandle = None
-        timeout_spc = utils.StatePipeCondition()
-        self._conn_cbs = set( [ timeout_spc ])
+        self._conn_cbs = set([])
         if init_cbs:
             self._conn_cbs.update(init_cbs)
-
-        def init_watcher(handle, event_type, state, path):
-            #called when init is successful or connection state is changed
-            LOG.debug("zookeeper connection state changed to %d.", state)
-            for cb in self._conn_cbs:
-                try:
-                    cb.set_and_notify((handle, event_type, state, path))
-                except:
-                    LOG.exception("something was wrong when notifying a connection callback")
         zookeeper.set_log_stream(self._zklog_fd)
-        self._zhandle = zookeeper.init(self._host, init_watcher, self._recv_timeout, 
+        return self.connect(timeout=timeout)
+    
+    def _init_watcher(self, handle, event_type, state, path):
+        #called when init is successful or connection state is changed
+        LOG.debug("zookeeper connection state changed to %d.", state)
+        for cb in self._conn_cbs:
+            try:
+                cb.set_and_notify((handle, event_type, state, path))
+            except Exception:
+                LOG.exception("Ignoring exception in notifying a connection callback")
+
+    def connect(self, timeout=None):
+        """Establish the ZooKeeper session. 
+        @param timeout: None by default means asynchronous session establishment.
+        or the time to wait until the session is established.
+        """
+        self.close()
+
+        timeout_spc = None
+        if timeout is not None:
+            timeout_spc = utils.StatePipeCondition()
+            self.add_connection_callback(timeout_spc)
+        self._zhandle = zookeeper.init(self._host, self._init_watcher, self._recv_timeout, 
                                        self._ident)
         if timeout is not None:
-            timeout_spc.wait_and_get(timeout=timeout)
-        self._conn_cbs.remove(timeout_spc)
-    
+            try:
+                timeout_spc.wait_and_get(timeout=timeout)
+            finally:
+                self._conn_cbs.remove(timeout_spc)
+        
     def add_connection_callback(self, callback):
         """
         @param callback: StatePipeCondition object
@@ -108,14 +122,20 @@ class ZKSession(object):
     def is_connected(self):
         return self._zhandle is not None and self.state()==zookeeper.CONNECTED_STATE
     
-    def close(self):
+    def close(self, quiet=True):
         """
-        close the handle. potentially a blocking call?
+        close the handle. (Is it a blocking call or not?)
         """
         if self._zhandle is not None:
-            zookeeper.close(self._zhandle)
-            # if closed successfully
-            self._zhandle = None
+            try:
+                zookeeper.close(self._zhandle)
+            except Exception:
+                LOG.exception("In close() found unexpected exception with handle=%s",
+                              self._zhandle)
+                if not quiet:
+                    raise
+            finally:
+                self._zhandle = None
     
     def create(self, path, value, acl=None, flags=0):
         """
