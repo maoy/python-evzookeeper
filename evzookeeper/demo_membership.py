@@ -25,7 +25,7 @@ from evzookeeper import ZKSession
 class NodeManager(object):
     def __init__(self, name):
         self.name = name
-        self._session = ZKSession("localhost:2181", 10)#, zklog_fd=sys.stderr)
+        self._session = ZKSession("localhost:2181", zklog_fd=sys.stderr)
         self.membership = recipes.Membership(self._session, "/basedir", name,
                                              cb_func=self.monitor)
 
