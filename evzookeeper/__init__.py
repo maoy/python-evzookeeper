@@ -83,7 +83,7 @@ class ZKSession(object):
         if init_cbs:
             self._conn_cbs.update(init_cbs)
         zookeeper.set_log_stream(self._zklog_fd)
-        return self.connect(timeout=timeout)
+        self.connect(timeout=timeout)
     
     def _init_watcher(self, handle, event_type, state, path):
         #called when init is successful or connection state is changed
