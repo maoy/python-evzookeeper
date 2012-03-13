@@ -15,6 +15,7 @@
 import os
 import functools
 import logging
+import thread
 
 import eventlet
 import zookeeper
@@ -87,12 +88,14 @@ class ZKSession(object):
     
     def _init_watcher(self, handle, event_type, state, path):
         #called when init is successful or connection state is changed
-        LOG.debug("zookeeper connection state changed to %d.", state)
-        for cb in self._conn_cbs:
+        # we make a copy of _conn_cbs because it might be changed in the 
+        # main thread during iteration
+        for cb in self._conn_cbs.copy():
             try:
                 cb.set_and_notify((handle, event_type, state, path))
             except Exception:
-                LOG.exception("Ignoring exception in notifying a connection callback")
+                # Ignoring exception in notifying a connection callback
+                pass
 
     def connect(self, timeout=None):
         """Establish the ZooKeeper session. 

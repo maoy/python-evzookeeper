@@ -25,22 +25,27 @@ from evzookeeper import ZKSession
 class NodeManager(object):
     def __init__(self, name):
         self.name = name
-        self._session = ZKSession("localhost:2181", zklog_fd=sys.stderr)
+        self._session = ZKSession("localhost:2181", recv_timeout=4000, 
+                                  zklog_fd=sys.stderr)
         self.membership = recipes.Membership(self._session, "/basedir", name,
                                              cb_func=self.monitor)
 
     def monitor(self, members):
-            print "in monitor", self.name, members
+        print "in monitor thread", self.name, members
             
         
 def demo():
-    nm1 = NodeManager("node1")
-    nm2 = NodeManager("node2")
-    eventlet.sleep(5)
-    nm3 = NodeManager("node3")
-    eventlet.sleep(60)
-    nm4 = NodeManager("node4")
-    eventlet.sleep(1000)
+    if len(sys.argv)>1:
+        _ = NodeManager(sys.argv[1])
+        eventlet.sleep(1000)
+    else:
+        nm1 = NodeManager("node1")
+        nm2 = NodeManager("node2")
+        eventlet.sleep(5)
+        nm3 = NodeManager("node3")
+        eventlet.sleep(60)
+        nm4 = NodeManager("node4")
+        eventlet.sleep(1000)
     
 if __name__=="__main__":
     demo()
