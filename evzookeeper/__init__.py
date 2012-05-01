@@ -110,17 +110,16 @@ class ZKSession(object):
         parameter.
         
         PARAMETERS:
-         zh: the zookeeper handle obtained by a call to zookeeper.init
-         scheme: the id of authentication scheme. Natively supported:
+        @param scheme: the id of authentication scheme. Natively supported:
         'digest' password-based authentication
-         cert: application credentials. The actual value depends on the scheme.
-         completion: the routine to invoke when the request completes. One of 
-        the following result codes may be passed into the completion callback:
-        OK operation completed successfully
-        AUTHFAILED authentication failed 
+        @param cert: application credentials. The actual value depends on the scheme.
+
+      
+        RETURNS None.
         
-        RETURNS:
+        If error occurs, one of the following corresponding exceptions will be thrown.
         OK on success or one of the following errcodes on failure:
+        AUTHFAILED authentication failed 
         BADARGUMENTS - invalid input parameters
         INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or AUTH_FAILED_STATE
         MARSHALLINGERROR - failed to marshall a request; possibly, out of memory
