@@ -22,7 +22,7 @@ import zookeeper
 
 from evzookeeper import utils
 
-ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
+ZOO_OPEN_ACL_UNSAFE = {"perms":zookeeper.PERM_ALL, "scheme":"world", "id" :"anyone"}
 
 LOG = logging.getLogger("evzookeeper")
 
@@ -97,12 +97,54 @@ class ZKSession(object):
                 # Ignoring exception in notifying a connection callback
                 pass
 
+    def add_auth(self, scheme, cert):
+        """
+        specify application credentials.
+        
+        The application calls this function to specify its credentials for purposes
+        of authentication. The server will use the security provider specified by 
+        the scheme parameter to authenticate the client connection. If the 
+        authentication request has failed:
+        - the server connection is dropped
+        - the watcher is called with the AUTH_FAILED_STATE value as the state 
+        parameter.
+        
+        PARAMETERS:
+         zh: the zookeeper handle obtained by a call to zookeeper.init
+         scheme: the id of authentication scheme. Natively supported:
+        'digest' password-based authentication
+         cert: application credentials. The actual value depends on the scheme.
+         completion: the routine to invoke when the request completes. One of 
+        the following result codes may be passed into the completion callback:
+        OK operation completed successfully
+        AUTHFAILED authentication failed 
+        
+        RETURNS:
+        OK on success or one of the following errcodes on failure:
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out of memory
+        SYSTEMERROR - a system error occured
+        """
+        pc = utils.StatePipeCondition()
+        ok = zookeeper.add_auth(self._zhandle, scheme, cert,
+                               functools.partial(generic_completion, 
+                                                 pc))
+        assert ok == zookeeper.OK
+        results = pc.wait_and_get()
+        #unpack result as void_completion
+        handle, rc = results
+        assert handle == self._zhandle
+        if rc == zookeeper.OK:
+            return
+        self._raise_exception(rc)
+        
     def connect(self, timeout=None):
         """Establish the ZooKeeper session. 
         @param timeout: None by default means asynchronous session establishment.
         or the time to wait until the session is established.
         """
-        self.close()
+        self.close(quiet=True)
 
         timeout_spc = None
         if timeout is not None:
@@ -479,7 +521,7 @@ class ZKSession(object):
         if rc == zookeeper.OK:
             return rc
         self._raise_exception(rc)
-            
+
         
     def __del__(self):
         self.close()
@@ -514,25 +556,4 @@ class ZKSession(object):
                     }
 
 
-    
-if __name__=="__main__":
-    def demo():
-        session = ZKSession("localhost:2181", timeout=10)
-        print 'connected'
-        session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
-        print 'test-tmp created'
-        print "(acl,stat)=", session.get_acl("/test-tmp")
-        try:
-            session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
-        except zookeeper.NodeExistsException:
-            pass
-        print session.exists("/test")
-        session.delete("/test")
-        session.create("/test", "abc", [ZOO_OPEN_ACL_UNSAFE], 0)
-        print session.get("/test")
-        print 'done.'
-        session.set("/test", "def")
-        print session.get("/test")
-
-    demo()
     

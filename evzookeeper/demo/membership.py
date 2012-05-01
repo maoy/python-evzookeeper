@@ -17,8 +17,9 @@ import sys
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
+
 import eventlet
-import recipes
+from evzookeeper import recipes
 
 from evzookeeper import ZKSession
 
