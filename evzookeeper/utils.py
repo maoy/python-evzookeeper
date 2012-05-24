@@ -42,7 +42,7 @@ class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
 
 
 class TimeoutGreenPipe(greenio.GreenPipe):
-    """read method with timeout"""
+    """Improve the GreenPipe read() method with timeout"""
 
     def __init__(self, f, mode='r', bufsize=-1):
         if not isinstance(f, (basestring, int, file)):
@@ -135,15 +135,12 @@ class PipeCondition(object):
         finally:
             self._close_rfd()
         
+
 class StatePipeCondition(PipeCondition):
     '''
     Typical usage with eventlet:
-    
-    create the object in the main thread, call wait_and_get(), then
+    Create the object in the main thread, call wait_and_get(), then
      in another OS thread, call notify(state=state).
-
-    
-    Right now notify() can only be used once.
     '''
     def __init__(self):
         PipeCondition.__init__(self)

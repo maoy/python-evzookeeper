@@ -23,7 +23,7 @@ from evzookeeper import ZKSession, ZOO_OPEN_ACL_UNSAFE
 def demo_acl():
     session = ZKSession("localhost:2181", timeout=10)
     print 'connected'
-    acl = [{"perms":0x1f, "scheme":"auth", "id":""}]
+    acl = [{"perms":zookeeper.PERM_ALL, "scheme":"auth", "id":""}]
     
     session.add_auth("digest", "user:pass")
     session.create("/test-acl", "abc", acl, zookeeper.EPHEMERAL)
