@@ -106,8 +106,6 @@ class PipeCondition(object):
                 # TODO: probably need to retry certain errors
                 if not quiet:
                     raise e
-        #finally:
-        #    self._close_wfd()
 
     def wait(self, timeout=None):
         """

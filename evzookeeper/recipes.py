@@ -132,17 +132,14 @@ class Membership(object):
                     timeout=self.REFRESH_INTERVAL)
             except eventlet.Timeout:
                 timeout = True
-            try:
-                if timeout:
-                    if self._session.is_connected():
-                        self._refresh()
+            if timeout:
+                if self._session.is_connected():
+                    self._refresh()
+            else:
+                if state == zookeeper.CONNECTED_STATE:
+                    self._on_connected()
                 else:
-                    if state == zookeeper.CONNECTED_STATE:
-                        self._on_connected()
-                    else:
-                        self._on_disconnected(state)
-            except RuntimeError:
-                pass
+                    self._on_disconnected(state)
     
     def _safe_callback(self):
         try:
@@ -177,11 +174,16 @@ class Membership(object):
         LOG.debug("recipes.Membership connected on %s", self._name)
         self._refresh()
 
-    def _refresh(self):
+    def _refresh(self, quiet=True):
         # if another node has the same name, we'll get an exception
-        if self._join():
-            self.monitor_pc.set_and_notify((zookeeper.SESSION_EVENT, 
-                                            zookeeper.CONNECTED_STATE))
+        try:
+            if self._join():
+                self.monitor_pc.set_and_notify((zookeeper.SESSION_EVENT, 
+                                                zookeeper.CONNECTED_STATE))
+        except Exception:
+            # error during creating the node.
+            if not quiet:
+                raise
 
     def _join(self):
         """Make sure the ephemeral node is in ZK, assuming the session
