@@ -23,9 +23,7 @@ from eventlet.support import get_errno
 
 
 class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
-    """
-    enhance SocketDuckForFd with timeout
-    """
+    """Enhance SocketDuckForFd with timeout"""
 
     def __init__(self, fileno):
         self._timeout = None
@@ -46,7 +44,8 @@ class TimeoutGreenPipe(greenio.GreenPipe):
 
     def __init__(self, f, mode='r', bufsize=-1):
         if not isinstance(f, (basestring, int, file)):
-            raise TypeError('f(ile) should be int, str, unicode or file, not %r' % f)
+            raise TypeError('f(ile) should be int, str, unicode or file, '
+                            'not %r' % f)
 
         if isinstance(f, basestring):
             f = open(f, mode, 0)
@@ -73,9 +72,8 @@ class TimeoutGreenPipe(greenio.GreenPipe):
 
 
 class PipeCondition(object):
-    '''
-    A data structure similar in spirit to condition variable 
-    implemented using pipes
+    '''A data structure similar in spirit to condition variable 
+    implemented using pipes.
     
     Typical usage with eventlet:
     
@@ -135,8 +133,7 @@ class PipeCondition(object):
         
 
 class StatePipeCondition(PipeCondition):
-    '''
-    Typical usage with eventlet:
+    '''Typical usage with eventlet:
     Create the object in the main thread, call wait_and_get(), then
      in another OS thread, call notify(state=state).
     '''

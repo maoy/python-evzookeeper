@@ -553,6 +553,3 @@ class ZKSession(object):
                     zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
                     zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
                     }
-
-
-    
