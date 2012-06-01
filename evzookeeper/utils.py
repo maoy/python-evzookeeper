@@ -46,10 +46,8 @@ class TimeoutGreenPipe(greenio.GreenPipe):
         if not isinstance(f, (basestring, int, file)):
             raise TypeError('f(ile) should be int, str, unicode or file, '
                             'not %r' % f)
-
         if isinstance(f, basestring):
             f = open(f, mode, 0)
- 
         if isinstance(f, int):
             fileno = f
             self._name = "<fd:%d>" % fileno
@@ -130,7 +128,7 @@ class PipeCondition(object):
             self._close_wfd()
         finally:
             self._close_rfd()
-        
+
 
 class StatePipeCondition(PipeCondition):
     '''Typical usage with eventlet:
@@ -140,7 +138,7 @@ class StatePipeCondition(PipeCondition):
     def __init__(self):
         PipeCondition.__init__(self)
         self._state = None
-        
+
     def set_and_notify(self, state, quiet=True):
         """Set state and notify the other OS thread.
         

@@ -14,8 +14,6 @@
 #    under the License.
 
 
-'''
-'''
 import zookeeper
 from evzookeeper import ZKSession, ZOO_OPEN_ACL_UNSAFE
 

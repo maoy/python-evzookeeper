@@ -20,13 +20,13 @@ import thread
 import eventlet
 import zookeeper
 
-from evzookeeper import utils
+from . import utils
 
 ZOO_OPEN_ACL_UNSAFE = {"perms":zookeeper.PERM_ALL, "scheme":"world", "id" :"anyone"}
 
 LOG = logging.getLogger("evzookeeper")
 
-def generic_completion(spc, *args):
+def _generic_completion(spc, *args):
     """The default async completion function
     @param spc: a StatePipeCondition object to notify main thread
     *args: depends on the completion function
@@ -127,7 +127,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.add_auth(self._zhandle, scheme, cert,
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -224,7 +224,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.acreate(self._zhandle, path, value, acl, flags,
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -264,7 +264,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.adelete(self._zhandle, path, version, 
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -292,7 +292,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()        
         ok = zookeeper.aexists(self._zhandle, path, watch,
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -320,7 +320,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.aget(self._zhandle, path, watcher,
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -343,7 +343,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.aget_acl(self._zhandle, path,
-                               functools.partial(generic_completion, 
+                               functools.partial(_generic_completion, 
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -380,7 +380,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()        
         ok = zookeeper.aget_children(self._zhandle, path, watcher,
-                                     functools.partial(generic_completion, 
+                                     functools.partial(_generic_completion, 
                                                        pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -420,7 +420,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()        
         ok = zookeeper.aset(self._zhandle, path, data, version,
-                                     functools.partial(generic_completion, 
+                                     functools.partial(_generic_completion, 
                                                        pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -486,7 +486,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()        
         ok = zookeeper.aset_acl(self._zhandle, path, version, acl,
-                                functools.partial(generic_completion, 
+                                functools.partial(_generic_completion, 
                                                   pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
@@ -510,7 +510,7 @@ class ZKSession(object):
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.async(self._zhandle, path,
-                             functools.partial(generic_completion, 
+                             functools.partial(_generic_completion, 
                                                pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
