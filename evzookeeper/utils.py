@@ -23,9 +23,7 @@ from eventlet.support import get_errno
 
 
 class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
-    """
-    enhance SocketDuckForFd with timeout
-    """
+    """Enhance SocketDuckForFd with timeout"""
 
     def __init__(self, fileno):
         self._timeout = None
@@ -42,15 +40,14 @@ class _SocketDuckForFdTimeout(greenio._SocketDuckForFd):
 
 
 class TimeoutGreenPipe(greenio.GreenPipe):
-    """read method with timeout"""
+    """Improve the GreenPipe read() method with timeout"""
 
     def __init__(self, f, mode='r', bufsize=-1):
         if not isinstance(f, (basestring, int, file)):
-            raise TypeError('f(ile) should be int, str, unicode or file, not %r' % f)
-
+            raise TypeError('f(ile) should be int, str, unicode or file, '
+                            'not %r' % f)
         if isinstance(f, basestring):
             f = open(f, mode, 0)
- 
         if isinstance(f, int):
             fileno = f
             self._name = "<fd:%d>" % fileno
@@ -73,9 +70,8 @@ class TimeoutGreenPipe(greenio.GreenPipe):
 
 
 class PipeCondition(object):
-    '''
-    A data structure similar in spirit to condition variable 
-    implemented using pipes
+    '''A data structure similar in spirit to condition variable 
+    implemented using pipes.
     
     Typical usage with eventlet:
     
@@ -106,8 +102,6 @@ class PipeCondition(object):
                 # TODO: probably need to retry certain errors
                 if not quiet:
                     raise e
-        #finally:
-        #    self._close_wfd()
 
     def wait(self, timeout=None):
         """
@@ -134,21 +128,17 @@ class PipeCondition(object):
             self._close_wfd()
         finally:
             self._close_rfd()
-        
-class StatePipeCondition(PipeCondition):
-    '''
-    Typical usage with eventlet:
-    
-    create the object in the main thread, call wait_and_get(), then
-     in another OS thread, call notify(state=state).
 
-    
-    Right now notify() can only be used once.
+
+class StatePipeCondition(PipeCondition):
+    '''Typical usage with eventlet:
+    Create the object in the main thread, call wait_and_get(), then
+     in another OS thread, call notify(state=state).
     '''
     def __init__(self):
         PipeCondition.__init__(self)
         self._state = None
-        
+
     def set_and_notify(self, state, quiet=True):
         """Set state and notify the other OS thread.
         

@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# This file exists for backward compatibility reasons.
-# The actual implementation is splitted into individual modules.
-
-from .membership import Membership
-from .queue import ZKQueue
+"""
+To demo the basic usage of the evzookeeper library
+"""

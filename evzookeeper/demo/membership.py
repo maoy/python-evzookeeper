@@ -17,12 +17,13 @@ import sys
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
-import eventlet
-import recipes
 
+import eventlet
+from evzookeeper import recipes
 from evzookeeper import ZKSession
 
 class NodeManager(object):
+
     def __init__(self, name):
         self.name = name
         self._session = ZKSession("localhost:2181", recv_timeout=4000, 
@@ -35,16 +36,16 @@ class NodeManager(object):
             
         
 def demo():
-    if len(sys.argv)>1:
-        _ = NodeManager(sys.argv[1])
+    if len(sys.argv) > 1:
+        _nm = NodeManager(sys.argv[1])
         eventlet.sleep(1000)
     else:
-        nm1 = NodeManager("node1")
-        nm2 = NodeManager("node2")
+        _nm1 = NodeManager("node1")
+        _nm2 = NodeManager("node2")
         eventlet.sleep(5)
-        nm3 = NodeManager("node3")
+        _nm3 = NodeManager("node3")
         eventlet.sleep(60)
-        nm4 = NodeManager("node4")
+        _nm4 = NodeManager("node4")
         eventlet.sleep(1000)
     
 if __name__=="__main__":

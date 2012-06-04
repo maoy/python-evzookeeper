@@ -13,8 +13,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# This file exists for backward compatibility reasons.
-# The actual implementation is splitted into individual modules.
 
-from .membership import Membership
-from .queue import ZKQueue
+'''
+'''
+import zookeeper
+from evzookeeper import ZKSession, ZOO_OPEN_ACL_UNSAFE
+
+
+def demo_acl():
+    session = ZKSession("localhost:2181", timeout=10)
+    print 'connected'
+    acl = [{"perms":zookeeper.PERM_ALL, "scheme":"auth", "id":""}]
+    
+    session.add_auth("digest", "user:pass")
+    session.create("/test-acl", "abc", acl, zookeeper.EPHEMERAL)
+    print 'test-acl created'
+    print "(acl,stat)=", session.get_acl("/test-acl")
+
+
+if __name__ == '__main__':
+    demo_acl()
