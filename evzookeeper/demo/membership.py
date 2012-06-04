@@ -20,10 +20,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 import eventlet
 from evzookeeper import recipes
-
 from evzookeeper import ZKSession
 
 class NodeManager(object):
+
     def __init__(self, name):
         self.name = name
         self._session = ZKSession("localhost:2181", recv_timeout=4000, 
@@ -36,7 +36,7 @@ class NodeManager(object):
             
         
 def demo():
-    if len(sys.argv)>1:
+    if len(sys.argv) > 1:
         _nm = NodeManager(sys.argv[1])
         eventlet.sleep(1000)
     else:

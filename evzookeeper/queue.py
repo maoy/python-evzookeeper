@@ -23,8 +23,7 @@ from . import utils
 LOG = logging.getLogger("evzookeeper.recipes")
 
 class ZKQueue(object):
-    '''
-    queue model, support concurrent enqueue/dequeue
+    '''A simple queue model, support concurrent enqueue/dequeue
     '''
     def __init__(self, session, basepath, acl=None):
         self._session = session
@@ -36,15 +35,12 @@ class ZKQueue(object):
             pass
 
     def enqueue(self, val):
-        '''
-        concurrent enqueue
-        '''
+        '''Concurrently enqueue'''
         return self._session.create(self.basepath + "/item-", val, 
                                     self.acl, zookeeper.SEQUENCE)
 
     def _get_and_delete(self, path):
-        '''
-        try to get and delete a node from zookeeper
+        '''Try to get and delete a node from zookeeper
         if not-exist return None
         '''
         try:
@@ -55,8 +51,8 @@ class ZKQueue(object):
             return None
 
     def dequeue(self, timeout=None):
-        '''
-        concurrent dequeue
+        '''Concurrently dequeue.
+        
         blocking for 'timeout' seconds; 
         if timeout is None, block indefinitely (by default)
         if timeout is 0, equivalent to non-blocking
