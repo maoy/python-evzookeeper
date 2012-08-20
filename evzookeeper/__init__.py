@@ -89,15 +89,11 @@ class ZKSession(object):
 
         @param init_cbs: initial callback objects of type StatePipeCondition
         """
-        LOG.debug("Create a new ZKSession: timeout=%(timeout)d "
-                  "recv_timeout=%(recv_timeout)d, refresh_interval="
-                  "%(refresh_int)d, ident=%(id)s,"                  
-                  "zklog_fd=%(lfd)s, init_cbs=%(init_cbs)s",
-                  {'host': host, 'timeout': timeout, 'recv_timeout':
-                   recv_timeout, 'refresh_interval': refresh_interval,
-                  'id': str(ident), 'lfd': str(zklog_fd),
-                  'init_cbs': str(init_cbs)})
-
+        LOG.debug("Create a new ZKSession: timeout=%(timeout)s "
+                  "recv_timeout=%(recv_timeout)s, refresh_interval="
+                  "%(refresh_interval)s, ident=%(ident)s,"                  
+                  "zklog_fd=%(zklog_fd)s, init_cbs=%(init_cbs)s",
+                  locals())
         self._host = host
         self._recv_timeout = recv_timeout
         self._refresh_interval = refresh_interval
