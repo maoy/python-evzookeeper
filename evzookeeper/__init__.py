@@ -89,9 +89,10 @@ class ZKSession(object):
 
         @param init_cbs: initial callback objects of type StatePipeCondition
         """
-        LOG.debug("Create a new ZKSession: servers=%(srv)s timeout=%(timeout)d\
-recv_timeout=%(recv_timeout)d, refresh_interval=%(refresh_int)d, ident=%(id)s,\
-zklog_fd=%(lfd)s, init_cbs=%(init_cbs)s",
+        LOG.debug("Create a new ZKSession: timeout=%(timeout)d "
+                  "recv_timeout=%(recv_timeout)d, refresh_interval="
+                  "%(refresh_int)d, ident=%(id)s,"                  
+                  "zklog_fd=%(lfd)s, init_cbs=%(init_cbs)s",
                   {'host': host, 'timeout': timeout, 'recv_timeout':
                    recv_timeout, 'refresh_interval': refresh_interval,
                   'id': str(ident), 'lfd': str(zklog_fd),
@@ -174,10 +175,11 @@ memory
         self._raise_exception(rc)
 
     def connect(self, timeout=None):
-        """Establish the ZooKeeper session.
-        @param timeout: None by default means asynchronous session \
-establishment.
-        or the time to wait until the session is established.
+        """Establish the ZooKeeper session. The method will make sure to close
+        the existing connection if available.
+        @param timeout: None by default means asynchronous session
+         establishment. Otherwise, it's the time to wait until the
+         session is established.
         """
         self.close(quiet=True)
 
@@ -663,9 +665,5 @@ class ZKSessionWatcher(object):
         raise NotImplementedError()
 
     def on_disconnected(self, state):
-        """Do nothing, will be implemented by subclasses"""
-        raise NotImplementedError()
-
-    def refresh(self):
         """Do nothing, will be implemented by subclasses"""
         raise NotImplementedError()
