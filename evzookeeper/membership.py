@@ -18,11 +18,9 @@ import functools
 import logging
 import random
 
-import eventlet
 import zookeeper
 
 import evzookeeper
-from evzookeeper import utils
 
 
 LOG = logging.getLogger(__name__)
@@ -45,9 +43,7 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
         """
         self._cb_func = cb_func or (lambda x: None)
         self._members = None
-        super(MembershipMonitor, self).__init__(session, basepath, acl)
-        # during initialization, the zk connection must be connected.
-        # otherwise an exception will be thrown
+        super(MembershipMonitor, self).__init__(session, basepath, acl=acl)
 
     def _safe_callback(self):
         try:
@@ -117,7 +113,7 @@ class Membership(evzookeeper.ZKServiceBase):
         self._name = name
         self._session_token = str(random.random())
         self._joined = False
-        super(Membership, self).__init__(session, basepath, acl)
+        super(Membership, self).__init__(session, basepath, acl=acl)
 
     def _session_callback(self):
         """Runs in a green thread to react to session state change."""
