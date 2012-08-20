@@ -57,7 +57,7 @@ class ZKSession(object):
                  "_conn_watchers")
 
     def __init__(self, host, timeout=None, recv_timeout=10000,
-                 refresh_interval=10, ident=(-1, ""), zklog_fd=None,
+                 ident=(-1, ""), zklog_fd=None,
                  init_cbs=None):
         """
         @param host: comma separated host:port pairs, each corresponding to
@@ -72,8 +72,6 @@ class ZKSession(object):
         recv_timeout, and then it retries the same IP at every recv_timeout
         period if only one of ensemble is given. If more than two ensemble IP
         are given, ZK clients will try next IP immediately.
-
-        @param refresh_interval: ZK connection checking interval [sec]
 
         @param ident: (clientid, passwd)
         clientid the id of a previously established session that this
@@ -90,13 +88,12 @@ class ZKSession(object):
         @param init_cbs: initial callback objects of type StatePipeCondition
         """
         LOG.debug("Create a new ZKSession: timeout=%(timeout)s "
-                  "recv_timeout=%(recv_timeout)s, refresh_interval="
-                  "%(refresh_interval)s, ident=%(ident)s,"                  
+                  "recv_timeout=%(recv_timeout)s,"
+                  "ident=%(ident)s,"                  
                   "zklog_fd=%(zklog_fd)s, init_cbs=%(init_cbs)s",
                   locals())
         self._host = host
         self._recv_timeout = recv_timeout
-        self._refresh_interval = refresh_interval
         self._ident = ident
         if zklog_fd is None:
             zklog_fd = open("/dev/null")
@@ -111,7 +108,7 @@ class ZKSession(object):
         conn_spc = utils.StatePipeCondition()
         self.add_connection_callback(conn_spc)
         self._conn_spc = conn_spc
-
+        eventlet.spawn(self._session_thread)
         self.connect(timeout=timeout)
 
     def _init_watcher(self, handle, event_type, state, path):
@@ -125,6 +122,20 @@ class ZKSession(object):
                 # Ignoring exception in notifying a connection callback
                 pass
 
+    def _session_thread(self):
+        """When the session state is changed, this function is triggered
+        in a green thread.
+        """
+        while 1:
+            handle, event, state, path = self._conn_spc.wait_and_get()
+            LOG.debug("Session state changed: handle=%(handle)s, path=%(path)s, "
+                      "event=%(event)s, state=%(state)s",
+                      locals())
+            if state == zookeeper.EXPIRED_SESSION_STATE:
+                LOG.debug("session %s expired. Try reconnect.", handle)
+                self.connect()
+
+        
     def add_auth(self, scheme, cert):
         """
         specify application credentials.
@@ -155,7 +166,7 @@ class ZKSession(object):
 AUTH_FAILED_STATE
         MARSHALLINGERROR - failed to marshall a request; possibly, out of \
 memory
-        SYSTEMERROR - a system error occured
+        SYSTEMERROR - a system error occurred
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.add_auth(self._zhandle, scheme, cert,
@@ -197,9 +208,18 @@ memory
         """
         self._conn_cbs.add(callback)
 
+    def remove_connection_callback(self, callback):
+        """
+        @param callback: StatePipeCondition object
+        """
+        self._conn_cbs.remove(callback)
+
     def is_connected(self):
         return (self._zhandle is not None and
                 self.state() == zookeeper.CONNECTED_STATE)
+
+    def client_id(self):
+        return zookeeper.client_id(self._zhandle)
 
     def close(self, quiet=True):
         """
@@ -209,8 +229,8 @@ memory
             try:
                 zookeeper.close(self._zhandle)
             except Exception:
-                LOG.exception("In close() found unexpected exception with \
-handle=%s", self._zhandle)
+                LOG.exception("In close() found unexpected exception with "
+                              "handle=%s", self._zhandle)
                 if not quiet:
                     raise
             finally:
@@ -595,71 +615,30 @@ handle=%s", self._zhandle)
                     zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
                     }
 
-    def _watch_connection(self):
-        """Runs in a green thread to periodically check connection state,
-        and makes sure that the zknode is in place.
+
+class ZKServiceBase(object):
+    """A typical ZK service that requires a default basepath, acl, and a
+    monitor to the session state"""
+
+    def __init__(self, session, basepath, acl=None):
+        """Constructor
+        
+        @param session: a ZKSession object
+        @param basepath: the default parent dir for zknodes.
+        @param acl: access control list, by default [ZOO_OPEN_ACL_UNSAFE] is
+        used
         """
+        self._session = session
+        self._basepath = basepath
+        self.acl = acl if acl else [ZOO_OPEN_ACL_UNSAFE]
+        self._session_spc = utils.StatePipeCondition()
+        self._session.add_connection_callback(self._session_spc)
+        eventlet.spawn(self._session_callback)
+
+    def _session_callback(self):
         while 1:
-            watchers = self._conn_watchers.copy()
-            if not len(watchers):
-                break
-            timeout = False
-            state = None
-            try:
-                _, _, state, _ = \
-                self._conn_spc.wait_and_get(timeout=self._refresh_interval)
-            except eventlet.Timeout:
-                timeout = True
-            if timeout:
-                if self.is_connected():
-                    for w in watchers:
-                        try:
-                            w.refresh()
-                        except Exception:
-                            # Ignoring exception
-                            LOG.exception("Unexpected error during "
-                                          "refresh() on %s", w)
-            else:
-                if state == zookeeper.CONNECTED_STATE:
-                    for w in watchers:
-                        try:
-                            w.on_connected()
-                        except Exception:
-                            # Ignoring exception
-                            LOG.exception('Unexpected error during '
-                                          'on_connected() on %s', w)
-                else:
-                    for w in watchers:
-                        try:
-                            w.on_disconnected(state)
-                        except Exception:
-                            # Ignoring exception
-                            LOG.exception('Unexpected error during '
-                                          'on_disconnected() on %s', w)
-
-    def add_connection_watcher(self, watcher):
-        LOG.debug("add_connection_watcher %s", str(watcher))
-        assert isinstance(watcher, ZKSessionWatcher)
-        self._conn_watchers.add(watcher)
-        # the first watcher
-        if len(self._conn_watchers) == 1:
-            eventlet.spawn(self._watch_connection)
-        if self.is_connected():
-            self._conn_spc.set_and_notify((None, zookeeper.SESSION_EVENT,
-                                    zookeeper.CONNECTED_STATE, ''))
-
-    def remove_connection_watcher(self, watcher):
-        self._conn_watchers.discard(watcher)
-        LOG.debug("Connection watcher %(w)s was removed, size of connection\
-watchers list is %(l)d", {'w': str(watcher), 'l': len(self._conn_watchers)})
-
-
-class ZKSessionWatcher(object):
-
-    def on_connected(self):
-        """Do nothing, will be implemented by subclasses"""
-        raise NotImplementedError()
-
-    def on_disconnected(self, state):
-        """Do nothing, will be implemented by subclasses"""
-        raise NotImplementedError()
+            _handle, event, state, _path = self._session_spc.wait_and_get()
+            LOG.debug("Default session callback handler on basepath=%(path)s, "
+                      "event=%(event)s, state=%(state)s",
+                      {'path': self._basepath,
+                       'event': event, 'state': state})

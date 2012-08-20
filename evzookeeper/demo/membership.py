@@ -46,7 +46,7 @@ class NodeMonitor(object):
 
 def demo():
     session = evzookeeper.ZKSession("localhost:2181", recv_timeout=4000,
-                        zklog_fd=sys.stderr)
+                                    zklog_fd=sys.stderr)
     _n = NodeMonitor(session)
     if len(sys.argv) > 1:
         _nm = NodeManager(sys.argv[1], session)

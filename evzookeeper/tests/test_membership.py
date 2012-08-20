@@ -14,6 +14,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
 import os
 import sys
 import unittest
@@ -24,21 +25,18 @@ import evzookeeper
 from evzookeeper import membership
 from evzookeeper import utils
 
-class NodeManager(object):
-
-    def __init__(self, name, session):
-        self.name = name
-        self.membership = membership.Membership(session,
-                                                "/basedir", name)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class MembershipTestCase(unittest.TestCase):
 
+    devnull = open(os.devnull,"w")
+    #devnull = sys.stderr
 
     def setUp(self):
-        f = open(os.devnull,"w")
         self.session = evzookeeper.ZKSession("localhost:2181", recv_timeout=4000,
-                       zklog_fd=f)
+                       zklog_fd=self.devnull, timeout=1)
+        eventlet.sleep(5)
 
     def tearDown(self):
         self.session.close()
@@ -52,11 +50,47 @@ class MembershipTestCase(unittest.TestCase):
         membership.MembershipMonitor(self.session,"/basedir",
                                                 cb_func=callback)
         _n1 = membership.Membership(self.session, "/basedir", "node1")
+        eventlet.sleep(0.5)
+        members = spc.wait_and_get(1)
+        self.assertEqual(members, set(["node1"]))
         _n2 = membership.Membership(self.session, "/basedir", "node2")
         eventlet.sleep(0.5)
         members = spc.wait_and_get(1)
-        self.assertEqual(sorted(members), ["node1", "node2"])
+        self.assertEqual(members, set(["node1", "node2"]))
 
+    def test_join_leave(self):
+        """Two nodes joined, one left later
+        """
+        spc = utils.StatePipeCondition()
+        def callback(members):
+            spc.set_and_notify(members)
+        membership.MembershipMonitor(self.session,"/basedir",
+                                                cb_func=callback)
+        _n1 = membership.Membership(self.session, "/basedir", "node1")
+        _n2 = membership.Membership(self.session, "/basedir", "node2")
+        eventlet.sleep(0.5)
+        _n2.leave()
+        eventlet.sleep(0.5)
+        members = spc.wait_and_get(1)
+        self.assertEqual(members, set(["node1"]))
+
+    def test_expire(self):
+        """test expire session"""
+        spc = utils.StatePipeCondition()
+        def callback(members):
+            spc.set_and_notify(members)
+        membership.MembershipMonitor(self.session,"/basedir",
+                                                cb_func=callback)
+        _n1 = membership.Membership(self.session, "/basedir", "node1")
+        _n2 = membership.Membership(self.session, "/basedir", "node2")
+        eventlet.sleep(0.5)
+        session2 = evzookeeper.ZKSession("localhost:2181", timeout=1, recv_timeout=4000,
+                                         ident=self.session.client_id(),
+                                         zklog_fd=self.devnull)
+        session2.close()
+        eventlet.sleep(3)
+        members = spc.wait_and_get(1)
+        self.assertEqual(members, set(["node1", "node2"]))
 
 if __name__ == "__main__":
     unittest.main()
