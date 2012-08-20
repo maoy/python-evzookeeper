@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,18 +14,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
-'''
-'''
+from evzookeeper import ZKSession
 import zookeeper
-from evzookeeper import ZKSession, ZOO_OPEN_ACL_UNSAFE
 
 
 def demo_acl():
     session = ZKSession("localhost:2181", timeout=10)
     print 'connected'
     acl = [{"perms":zookeeper.PERM_ALL, "scheme":"auth", "id":""}]
-    
     session.add_auth("digest", "user:pass")
     session.create("/test-acl", "abc", acl, zookeeper.EPHEMERAL)
     print 'test-acl created'

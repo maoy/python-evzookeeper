@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,40 +14,51 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
+import eventlet
 import logging
+import sys
+
+import evzookeeper
+from evzookeeper import membership
+
 
 logging.basicConfig(level=logging.DEBUG)
 
-import eventlet
-from evzookeeper import recipes
-from evzookeeper import ZKSession
 
 class NodeManager(object):
 
-    def __init__(self, name):
+    def __init__(self, name, session):
         self.name = name
-        self._session = ZKSession("localhost:2181", recv_timeout=4000, 
-                                  zklog_fd=sys.stderr)
-        self.membership = recipes.Membership(self._session, "/basedir", name,
-                                             cb_func=self.monitor)
+        self.membership = membership.Membership(session,
+                                                "/basedir", name)
+
+
+class NodeMonitor(object):
+
+    def __init__(self, session):
+        self.mon = membership.MembershipMonitor(session,
+                                                "/basedir",
+                                                cb_func=self.monitor)
 
     def monitor(self, members):
-        print "in monitor thread", self.name, members
-            
-        
+        print "in monitoring thread", members
+
+
 def demo():
+    session = evzookeeper.ZKSession("localhost:2181", recv_timeout=4000,
+                        zklog_fd=sys.stderr)
+    _n = NodeMonitor(session)
     if len(sys.argv) > 1:
-        _nm = NodeManager(sys.argv[1])
+        _nm = NodeManager(sys.argv[1], session)
         eventlet.sleep(1000)
     else:
-        _nm1 = NodeManager("node1")
-        _nm2 = NodeManager("node2")
+        _nm1 = NodeManager("node1", session)
+        _nm2 = NodeManager("node2", session)
         eventlet.sleep(5)
-        _nm3 = NodeManager("node3")
+        _nm3 = NodeManager("node3", session)
         eventlet.sleep(60)
-        _nm4 = NodeManager("node4")
+        _nm4 = NodeManager("node4", session)
         eventlet.sleep(1000)
-    
-if __name__=="__main__":
+
+if __name__ == "__main__":
     demo()
