@@ -72,6 +72,10 @@ class TimeoutGreenPipe(greenio.GreenPipe):
         self._sock._timeout = timeout
 
 
+class PipeConditionClosedError(Exception):
+    pass
+
+
 class PipeCondition(object):
     '''A data structure similar in spirit to condition variable
     implemented using pipes.
@@ -103,7 +107,7 @@ class PipeCondition(object):
                 # the waiter fd is closed
                 pass
             else:
-                # TODO(yunmao): probably need to retry certain errors
+                # TODO(maoy): probably need to retry certain errors
                 if not quiet:
                     raise e
 
@@ -113,8 +117,13 @@ class PipeCondition(object):
         @return: None if notified within timeout
         or raise an exception of eventlet.timeout.Timeout
         """
-        self._greenpipe.set_timeout(timeout)
+        try:
+            self._greenpipe.set_timeout(timeout)
+        except AttributeError:
+            raise PipeConditionClosedError()
         value = self._greenpipe.read(1)
+        if len(value) == 0:
+            raise PipeConditionClosedError()
         assert value == "X"
 
     def _close_wfd(self):
@@ -127,11 +136,17 @@ class PipeCondition(object):
             self._greenpipe.close()
             self._greenpipe = None
 
-    def __del__(self):
+    def close(self):
         try:
             self._close_wfd()
         finally:
             self._close_rfd()
+        
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 class StatePipeCondition(PipeCondition):

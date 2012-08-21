@@ -92,5 +92,22 @@ class MembershipTestCase(unittest.TestCase):
         members = spc.wait_and_get(1)
         self.assertEqual(members, set(["node1", "node2"]))
 
+    def test_leak(self):
+        """Test fd leak"""
+        spc = utils.StatePipeCondition()
+        def callback(members):
+            spc.set_and_notify(members)
+        membership.MembershipMonitor(self.session,"/basedir",
+                                                cb_func=callback)
+        mem = membership.Membership(self.session, "/basedir", "node0")
+        eventlet.sleep(0.5)
+        mem.leave()
+        #mem._session_spc.close()
+        print "sleeping for 5 seconds"
+        eventlet.sleep(5)
+        members = spc.wait_and_get(1)
+        self.assertEqual(len(members), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

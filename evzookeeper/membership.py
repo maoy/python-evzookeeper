@@ -21,7 +21,7 @@ import random
 import zookeeper
 
 import evzookeeper
-
+from evzookeeper import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -56,7 +56,11 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
         self._members = self._get_members()
         self._safe_callback()
         while 1:
-            _handle, event, state, _path = self._session_spc.wait_and_get()
+            try:
+                _handle, event, state, _path = self._session_spc.wait_and_get()
+            except utils.PipeConditionClosedError:
+                LOG.info("pipe condition is closed. exit the green thread.")
+                break
             LOG.debug("MembershipMonitor _watch_membership on %(path)s "
                       "event=%(event)s state=%(state)s",
                       {'path': self._basepath,
@@ -119,7 +123,11 @@ class Membership(evzookeeper.ZKServiceBase):
         """Runs in a green thread to react to session state change."""
         self.refresh()
         while 1:
-            handle, event, state, path = self._session_spc.wait_and_get()
+            try:
+                handle, event, state, path = self._session_spc.wait_and_get()
+            except utils.PipeConditionClosedError:
+                LOG.info("pipe condition is closed. exit the green thread.")
+                break
             LOG.debug("Session state changed: handle=%(handle)s, path=%(path)s, "
                       "event=%(event)s, state=%(state)s",
                       locals())
@@ -182,6 +190,7 @@ class Membership(evzookeeper.ZKServiceBase):
                 self._session.remove_connection_callback(self._session_spc)
             except KeyError:
                 pass
+            self._session_spc.close()
             try:
                 self._session.delete("%s/%s" % (self._basepath, self._name))
             except zookeeper.ZooKeeperException:
