@@ -25,7 +25,8 @@ import evzookeeper
 from evzookeeper import membership
 from evzookeeper import utils
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARN)
 
 
 class MembershipTestCase(unittest.TestCase):
@@ -75,7 +76,7 @@ class MembershipTestCase(unittest.TestCase):
         self.assertEqual(members, set(["node1"]))
 
     def test_expire(self):
-        """test expire session"""
+        """test expire session state in zk"""
         spc = utils.StatePipeCondition()
         def callback(members):
             spc.set_and_notify(members)
@@ -92,6 +93,24 @@ class MembershipTestCase(unittest.TestCase):
         members = spc.wait_and_get(1)
         self.assertEqual(members, set(["node1", "node2"]))
 
+    def test_join_leave_many(self):
+        """Generate many nodes to join and leave."""
+        count = 1000
+        spc = utils.StatePipeCondition()
+        def callback(members):
+            spc.set_and_notify(members)
+        mon = membership.MembershipMonitor(self.session,"/basedir",
+                                                cb_func=callback)
+        for i in range(count):
+            m = membership.Membership(self.session, "/basedir", "node%d" % i,
+                                      async_mode=False)
+            m.leave()
+            #member._session_spc.close()
+        eventlet.sleep(5)
+        members = spc.wait_and_get(1)
+        logging.debug(mon.get_all())
+        self.assertEqual(len(members), 0)
+
     def test_leak(self):
         """Test fd leak"""
         spc = utils.StatePipeCondition()
@@ -100,10 +119,7 @@ class MembershipTestCase(unittest.TestCase):
         membership.MembershipMonitor(self.session,"/basedir",
                                                 cb_func=callback)
         mem = membership.Membership(self.session, "/basedir", "node0")
-        eventlet.sleep(0.5)
         mem.leave()
-        #mem._session_spc.close()
-        print "sleeping for 5 seconds"
         eventlet.sleep(5)
         members = spc.wait_and_get(1)
         self.assertEqual(len(members), 0)

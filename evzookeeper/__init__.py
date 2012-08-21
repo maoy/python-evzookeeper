@@ -653,7 +653,7 @@ class ZKServiceBase(object):
                        'event': event, 'state': state})
 
     def __del__(self):
-        LOG.debug("In destructor of ZKServiceBase")
+        #LOG.debug("In destructor of ZKServiceBase")
         if self._session_spc and self._session:
             try:
                 self._session.remove_connection_callback(self._session_spc)
