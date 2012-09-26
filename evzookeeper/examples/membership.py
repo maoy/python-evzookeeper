@@ -41,7 +41,9 @@ class NodeMonitor(object):
                                                 cb_func=self.monitor)
 
     def monitor(self, members):
-        print "in monitoring thread", members
+        print "in monitoring callback thread", members
+        for member in members:
+            print "detail of %s: %s" % (member, self.mon.get_member_details(member))
 
 
 def demo():

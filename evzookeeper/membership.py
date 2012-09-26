@@ -72,6 +72,12 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
     def get_all(self):
         """@return: a list of node names from the local cache"""
         return self._members
+    
+    def get_member_details(self, name):
+        """Return the zknode info as (value, stat) .
+        Raise appropriate exceptions in the case of failures."""
+        value, stat = self._session.get("%s/%s" % (self._basepath, name))
+        return value, stat
 
     def _get_members(self, quiet=True):
         try:
