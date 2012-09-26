@@ -7,3 +7,7 @@ any blocking calls in the green threads.
 
 The code is distributed in Apache 2 License.
 
+To install:
+
+pip install evzookeeper
+
