@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,8 +14,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# This file exists for backward compatibility reasons.
-# The actual implementation is splitted into individual modules.
-
-from .membership import Membership
-from .queue import ZKQueue
+"""
+To demo the basic usage of the evzookeeper library
+"""

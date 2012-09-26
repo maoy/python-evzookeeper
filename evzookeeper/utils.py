@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -55,29 +56,35 @@ class TimeoutGreenPipe(greenio.GreenPipe):
             fileno = os.dup(f.fileno())
             self._name = f.name
             if f.mode != mode:
-                raise ValueError('file.mode %r does not match mode parameter %r' % (f.mode, mode))
+                raise \
+                    ValueError('file.mode %r does not match mode parameter %r'
+                                % (f.mode, mode))
             self._name = f.name
             f.close()
 
-        greenio._fileobject.__init__(self, _SocketDuckForFdTimeout(fileno), 
+        greenio._fileobject.__init__(self, _SocketDuckForFdTimeout(fileno),
                                      mode, bufsize)
         greenio.set_nonblocking(self)
         self.softspace = 0
-    
+
     def set_timeout(self, timeout):
         """set timeout in seconds before read"""
         self._sock._timeout = timeout
 
 
+class PipeConditionClosedError(Exception):
+    pass
+
+
 class PipeCondition(object):
-    '''A data structure similar in spirit to condition variable 
+    '''A data structure similar in spirit to condition variable
     implemented using pipes.
-    
+
     Typical usage with eventlet:
-    
+
     create the object in the main thread, call wait(), then
-    call notify() in another OS thread. 
-    
+    call notify() in another OS thread.
+
     Right now notify() can only be used once.
     '''
 
@@ -85,21 +92,22 @@ class PipeCondition(object):
         rfd, wfd = os.pipe()
         self._wfd = wfd
         self._greenpipe = TimeoutGreenPipe(rfd, 'rb', 0)
-        
+
     def notify(self, quiet=True):
         """Notify the other OS thread.
-        
-        @param quiet: if True, do not raise any exceptions. 
+
+        @param quiet: if True, do not raise any exceptions.
         """
         try:
             if self._wfd is not None:
-                os.write(self._wfd, "X") #write an arbitrary byte
+                #write an arbitrary byte
+                os.write(self._wfd, "X")
         except IOError, e:
             if e.errno == errno.EPIPE:
                 # the waiter fd is closed
                 pass
             else:
-                # TODO: probably need to retry certain errors
+                # TODO(maoy): probably need to retry certain errors
                 if not quiet:
                     raise e
 
@@ -109,25 +117,36 @@ class PipeCondition(object):
         @return: None if notified within timeout
         or raise an exception of eventlet.timeout.Timeout
         """
-        self._greenpipe.set_timeout(timeout)
+        try:
+            self._greenpipe.set_timeout(timeout)
+        except AttributeError:
+            raise PipeConditionClosedError()
         value = self._greenpipe.read(1)
-        assert value=="X"
+        if len(value) == 0:
+            raise PipeConditionClosedError()
+        assert value == "X"
 
     def _close_wfd(self):
         if self._wfd is not None:
             os.close(self._wfd)
             self._wfd = None
-    
+
     def _close_rfd(self):
         if self._greenpipe is not None:
             self._greenpipe.close()
             self._greenpipe = None
 
-    def __del__(self):
+    def close(self):
         try:
             self._close_wfd()
         finally:
             self._close_rfd()
+        
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 class StatePipeCondition(PipeCondition):
@@ -141,12 +160,12 @@ class StatePipeCondition(PipeCondition):
 
     def set_and_notify(self, state, quiet=True):
         """Set state and notify the other OS thread.
-        
-        @param quiet: if True, do not raise any exceptions. 
+
+        @param quiet: if True, do not raise any exceptions.
         """
         self._state = state
         return PipeCondition.notify(self, quiet=quiet)
-        
+
     def wait_and_get(self, timeout=None):
         self.wait(timeout)
         return self._state

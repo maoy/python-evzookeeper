@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -18,9 +19,10 @@ import logging
 
 import zookeeper
 
-from . import utils
+from evzookeeper import utils
 
-LOG = logging.getLogger("evzookeeper.recipes")
+LOG = logging.getLogger(__name__)
+
 
 class ZKQueue(object):
     '''A simple queue model, support concurrent enqueue/dequeue
@@ -36,7 +38,7 @@ class ZKQueue(object):
 
     def enqueue(self, val):
         '''Concurrently enqueue'''
-        return self._session.create(self.basepath + "/item-", val, 
+        return self._session.create(self.basepath + "/item-", val,
                                     self.acl, zookeeper.SEQUENCE)
 
     def _get_and_delete(self, path):
@@ -52,8 +54,8 @@ class ZKQueue(object):
 
     def dequeue(self, timeout=None):
         '''Concurrently dequeue.
-        
-        blocking for 'timeout' seconds; 
+
+        blocking for 'timeout' seconds;
         if timeout is None, block indefinitely (by default)
         if timeout is 0, equivalent to non-blocking
         '''
@@ -63,7 +65,7 @@ class ZKQueue(object):
         while True:
             pc = utils.PipeCondition()
             children = sorted(self._session.
-                              get_children(self.basepath, 
+                              get_children(self.basepath,
                                            functools.partial(watcher, pc)))
             for child in children:
                 data = self._get_and_delete(self.basepath + "/" + child)

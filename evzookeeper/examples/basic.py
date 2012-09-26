@@ -1,5 +1,6 @@
-# Copyright (c) 2011-2012 Yun Mao <yunmao at gmail dot com>.
-# All Rights Reserved.
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+# Copyright (c) 2011-2012 AT&T Labs, Inc. Yun Mao <yunmao@gmail.com>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,14 +14,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
+from evzookeeper import ZKSession
+from evzookeeper import ZOO_OPEN_ACL_UNSAFE
 import zookeeper
-from evzookeeper import ZKSession, ZOO_OPEN_ACL_UNSAFE
+
 
 def demo():
     session = ZKSession("localhost:2181", timeout=10)
     print 'connected'
-    session.create("/test-tmp", "abc", [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
+    session.create("/test-tmp", "abc",
+                   [ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
     print 'test-tmp created'
     print "(acl,stat)=", session.get_acl("/test-tmp")
     try:
