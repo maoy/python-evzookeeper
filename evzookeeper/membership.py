@@ -49,7 +49,7 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
         try:
             return self._cb_func(self._members)
         except Exception:
-            LOG.exception("ignoring unexpected callback function exception")
+            LOG.exception("Ignore exception from the callback function")
 
     def _session_callback(self):
         """Runs in a green thread to get all members."""
