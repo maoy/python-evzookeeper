@@ -21,7 +21,7 @@ import random
 import zookeeper
 
 import evzookeeper
-
+from evzookeeper import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -56,7 +56,11 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
         self._members = self._get_members()
         self._safe_callback()
         while 1:
-            _handle, event, state, _path = self._session_spc.wait_and_get()
+            try:
+                _handle, event, state, _path = self._session_spc.wait_and_get()
+            except utils.PipeConditionClosedError:
+                LOG.info("pipe condition is closed. exit the green thread.")
+                break
             LOG.debug("MembershipMonitor _watch_membership on %(path)s "
                       "event=%(event)s state=%(state)s",
                       {'path': self._basepath,
@@ -107,7 +111,7 @@ class Membership(evzookeeper.ZKServiceBase):
     it is not allowed to re-join.
     '''
 
-    def __init__(self, session, basepath, name, acl=None):
+    def __init__(self, session, basepath, name, acl=None, async_mode=False):
         """Initialize and join the membership
 
         @param session: a ZKSession object
@@ -115,17 +119,26 @@ class Membership(evzookeeper.ZKServiceBase):
         @param name: name of this member
         @param acl: access control list, by default [ZOO_OPEN_ACL_UNSAFE] is
             used
+        @param async_mode: if True then the zknode will be created asynchronously.
         """
         self._name = name
         self._session_token = str(random.random())
         self._joined = False
+        self._async_mode = async_mode
         super(Membership, self).__init__(session, basepath, acl=acl)
+        if not async_mode:
+            self.refresh(quiet=False)
 
     def _session_callback(self):
         """Runs in a green thread to react to session state change."""
-        self.refresh()
+        if self._async_mode:
+            self.refresh(quiet=True)
         while 1:
-            handle, event, state, path = self._session_spc.wait_and_get()
+            try:
+                handle, event, state, path = self._session_spc.wait_and_get()
+            except utils.PipeConditionClosedError:
+                LOG.info("pipe condition is closed. exit the green thread.")
+                break
             LOG.debug("Session state changed: handle=%(handle)s, path=%(path)s, "
                       "event=%(event)s, state=%(state)s",
                       locals())
@@ -152,10 +165,14 @@ class Membership(evzookeeper.ZKServiceBase):
 
         @return: True if the node didn't exist and was created;
         False if already joined;
+        None: the node left the membership before zknode is created;
         or raise RuntimeError if another session is occupying
         the node currently.
         """
-        path = self._basepath + '/' + self._name
+        if self._name is None:
+            return None
+        name = self._name
+        path = self._basepath + '/' + name
         LOG.debug("Membership._join on %s", path)
         # make sure base path exists
         try:
@@ -171,6 +188,12 @@ class Membership(evzookeeper.ZKServiceBase):
                 LOG.warn("node %s successfully created even after joined."
                          "data loss?", path)
             self._joined = True
+            if self._name is None:
+                # leave() was called when creating node. so the node is
+                # not really deleted. try again.
+                self._name = name
+                self.leave()
+                return None
             return True
         except zookeeper.NodeExistsException:
             (data, _) = self._session.get(path)
@@ -182,16 +205,27 @@ class Membership(evzookeeper.ZKServiceBase):
         return False
 
     def leave(self):
-        LOG.debug("Membership leave on %s/%s", self._basepath, self._name)
-        if self._name:
-            try:
-                self._session.remove_connection_callback(self._session_spc)
-            except KeyError:
-                pass
-            try:
-                self._session.delete("%s/%s" % (self._basepath, self._name))
-            except zookeeper.ZooKeeperException:
-                LOG.exception("error when deleting membership node. ignore.")
-            self._name = None
-            return True
-        return False
+        if self._name is None:
+            return False
+
+        path = "%s/%s" % (self._basepath, self._name)
+        LOG.debug("Membership leave on %s", path)
+        self._name = None
+        self._joined = False
+        try:
+            self._session.remove_connection_callback(self._session_spc)
+        except KeyError:
+            pass
+        self._session_spc.close()
+        try:
+            self._session.delete(path)
+            LOG.debug("Membership.leave: deleted %s", (path,))
+        except zookeeper.NoNodeException:
+            LOG.warn("No such node when deleting membership node. Ignore.")
+        except zookeeper.ZooKeeperException:
+            LOG.exception("error when deleting membership node. ignore.")
+        return True
+
+    def __del__(self):
+        self.leave()
+        super(Membership, self).__del__()

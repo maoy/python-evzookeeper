@@ -284,6 +284,7 @@ memory
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as string_completion
         handle, rc, real_path = results
         assert handle == self._zhandle
@@ -324,6 +325,7 @@ memory
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -351,6 +353,7 @@ memory
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -379,6 +382,7 @@ memory
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as data_completion
         handle, rc, data, stat = results
         assert handle == self._zhandle
@@ -402,6 +406,7 @@ memory
                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as acl_completion
         handle, rc, acl, stat = results
         assert handle == self._zhandle
@@ -439,6 +444,7 @@ memory
                                                        pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as strings_completion
         handle, rc, children = results
         assert handle == self._zhandle
@@ -479,6 +485,7 @@ memory
                                                        pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as stat_completion
         handle, rc, stat = results
         assert handle == self._zhandle
@@ -545,6 +552,7 @@ memory
                                                   pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -569,6 +577,7 @@ memory
                                                pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
+        pc.close()
         #unpack result as void_completion
         handle, rc = results
         assert handle == self._zhandle
@@ -642,3 +651,12 @@ class ZKServiceBase(object):
                       "event=%(event)s, state=%(state)s",
                       {'path': self._basepath,
                        'event': event, 'state': state})
+
+    def __del__(self):
+        #LOG.debug("In destructor of ZKServiceBase")
+        if self._session_spc and self._session:
+            try:
+                self._session.remove_connection_callback(self._session_spc)
+            except KeyError:
+                pass
+            self._session_spc.close()
