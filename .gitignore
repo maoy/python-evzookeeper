@@ -4,4 +4,5 @@
 .project
 .pydevproject
 *~
-
+dist
+evzookeeper.egg-info
