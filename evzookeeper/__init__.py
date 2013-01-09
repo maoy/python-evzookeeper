@@ -53,8 +53,7 @@ def _generic_completion(spc, *args):
 class ZKSession(object):
 
     __slots__ = ("_zhandle", "_host", "_recv_timeout", "_refresh_interval",
-                 "_ident", "_zklog_fd", "_conn_cbs", "_conn_spc",
-                 "_conn_watchers")
+                 "_ident", "_zklog_fd", "_conn_cbs", "_conn_spc")
 
     def __init__(self, host, timeout=None, recv_timeout=10000,
                  ident=(-1, ""), zklog_fd=None,
@@ -104,7 +103,6 @@ class ZKSession(object):
             self._conn_cbs.update(init_cbs)
         zookeeper.set_log_stream(self._zklog_fd)
 
-        self._conn_watchers = set([])
         conn_spc = utils.StatePipeCondition()
         self.add_connection_callback(conn_spc)
         self._conn_spc = conn_spc
