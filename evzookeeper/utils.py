@@ -58,7 +58,7 @@ class TimeoutGreenPipe(greenio.GreenPipe):
             if f.mode != mode:
                 raise \
                     ValueError('file.mode %r does not match mode parameter %r'
-                                % (f.mode, mode))
+                               % (f.mode, mode))
             self._name = f.name
             f.close()
 
@@ -141,7 +141,7 @@ class PipeCondition(object):
             self._close_wfd()
         finally:
             self._close_rfd()
-        
+
     def __del__(self):
         try:
             self.close()
