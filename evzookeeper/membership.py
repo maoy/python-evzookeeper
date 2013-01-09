@@ -76,7 +76,7 @@ class MembershipMonitor(evzookeeper.ZKServiceBase):
     def get_all(self):
         """@return: a list of node names from the local cache"""
         return self._members
-    
+
     def get_member_details(self, name):
         """Return the zknode info as (value, stat) .
         Raise appropriate exceptions in the case of failures."""
@@ -119,7 +119,8 @@ class Membership(evzookeeper.ZKServiceBase):
         @param name: name of this member
         @param acl: access control list, by default [ZOO_OPEN_ACL_UNSAFE] is
             used
-        @param async_mode: if True then the zknode will be created asynchronously.
+        @param async_mode: if True then the zknode will be created
+            asynchronously.
         """
         self._name = name
         self._session_token = str(random.random())
@@ -139,8 +140,8 @@ class Membership(evzookeeper.ZKServiceBase):
             except utils.PipeConditionClosedError:
                 LOG.info("pipe condition is closed. exit the green thread.")
                 break
-            LOG.debug("Session state changed: handle=%(handle)s, path=%(path)s, "
-                      "event=%(event)s, state=%(state)s",
+            LOG.debug("Session state changed: handle=%(handle)s, "
+                      "path=%(path)s, event=%(event)s, state=%(state)s",
                       locals())
             if state == zookeeper.EXPIRED_SESSION_STATE:
                 LOG.debug("session %s expired.", handle)
@@ -148,7 +149,7 @@ class Membership(evzookeeper.ZKServiceBase):
             if state == zookeeper.CONNECTED_STATE:
                 LOG.debug("session %s connected.", handle)
                 self.refresh(quiet=True)
-    
+
     def refresh(self, quiet=True):
         # if another node has the same name, we'll get an exception
         try:

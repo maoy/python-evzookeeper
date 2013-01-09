@@ -16,9 +16,6 @@
 
 import functools
 import logging
-import os
-import sys
-import thread
 
 import eventlet
 import zookeeper
@@ -49,12 +46,10 @@ def _generic_completion(spc, *args):
     spc.set_and_notify(args)
 
 
-
 class ZKSession(object):
 
     __slots__ = ("_zhandle", "_host", "_recv_timeout", "_refresh_interval",
-                 "_ident", "_zklog_fd", "_conn_cbs", "_conn_spc",
-                 "_conn_watchers")
+                 "_ident", "_zklog_fd", "_conn_cbs", "_conn_spc")
 
     def __init__(self, host, timeout=None, recv_timeout=10000,
                  ident=(-1, ""), zklog_fd=None,
@@ -89,7 +84,7 @@ class ZKSession(object):
         """
         LOG.debug("Create a new ZKSession: timeout=%(timeout)s "
                   "recv_timeout=%(recv_timeout)s,"
-                  "ident=%(ident)s,"                  
+                  "ident=%(ident)s,"
                   "zklog_fd=%(zklog_fd)s, init_cbs=%(init_cbs)s",
                   locals())
         self._host = host
@@ -104,7 +99,6 @@ class ZKSession(object):
             self._conn_cbs.update(init_cbs)
         zookeeper.set_log_stream(self._zklog_fd)
 
-        self._conn_watchers = set([])
         conn_spc = utils.StatePipeCondition()
         self.add_connection_callback(conn_spc)
         self._conn_spc = conn_spc
@@ -112,9 +106,9 @@ class ZKSession(object):
         self.connect(timeout=timeout)
 
     def _init_watcher(self, handle, event_type, state, path):
-        #called when init is successful or connection state is changed
+        # called when init is successful or connection state is changed
         # we make a copy of _conn_cbs because it might be changed in
-        #the main thread during iteration
+        # the main thread during iteration
         for cb in self._conn_cbs.copy():
             try:
                 cb.set_and_notify((handle, event_type, state, path))
@@ -128,14 +122,13 @@ class ZKSession(object):
         """
         while 1:
             handle, event, state, path = self._conn_spc.wait_and_get()
-            LOG.debug("Session state changed: handle=%(handle)s, path=%(path)s, "
-                      "event=%(event)s, state=%(state)s",
+            LOG.debug("Session state changed: handle=%(handle)s, "
+                      "path=%(path)s, event=%(event)s, state=%(state)s",
                       locals())
             if state == zookeeper.EXPIRED_SESSION_STATE:
                 LOG.debug("session %s expired. Try reconnect.", handle)
                 self.connect()
 
-        
     def add_auth(self, scheme, cert):
         """
         specify application credentials.
@@ -162,16 +155,16 @@ class ZKSession(object):
         OK on success or one of the following errcodes on failure:
         AUTHFAILED authentication failed
         BADARGUMENTS - invalid input parameters
-        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or \
-AUTH_FAILED_STATE
-        MARSHALLINGERROR - failed to marshall a request; possibly, out of \
-memory
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or
+            AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out of
+            memory
         SYSTEMERROR - a system error occurred
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.add_auth(self._zhandle, scheme, cert,
-                               functools.partial(_generic_completion,
-                                                 pc))
+                                functools.partial(_generic_completion,
+                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
         #unpack result as void_completion
@@ -378,8 +371,8 @@ memory
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.aget(self._zhandle, path, watcher,
-                               functools.partial(_generic_completion,
-                                                 pc))
+                            functools.partial(_generic_completion,
+                                              pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
         pc.close()
@@ -402,8 +395,8 @@ memory
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.aget_acl(self._zhandle, path,
-                               functools.partial(_generic_completion,
-                                                 pc))
+                                functools.partial(_generic_completion,
+                                                  pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
         pc.close()
@@ -481,8 +474,8 @@ memory
         """
         pc = utils.StatePipeCondition()
         ok = zookeeper.aset(self._zhandle, path, data, version,
-                                     functools.partial(_generic_completion,
-                                                       pc))
+                            functools.partial(_generic_completion,
+                                              pc))
         assert ok == zookeeper.OK
         results = pc.wait_and_get()
         pc.close()
@@ -593,36 +586,36 @@ memory
 
     # translate return code to exception
     _rc2exception = {zookeeper.APIERROR: zookeeper.ApiErrorException,
-                    zookeeper.AUTHFAILED: zookeeper.AuthFailedException,
-                    zookeeper.BADARGUMENTS: zookeeper.BadArgumentsException,
-                    zookeeper.BADVERSION: zookeeper.BadVersionException,
-                    zookeeper.CLOSING: zookeeper.ClosingException,
-                    zookeeper.CONNECTIONLOSS:
+                     zookeeper.AUTHFAILED: zookeeper.AuthFailedException,
+                     zookeeper.BADARGUMENTS: zookeeper.BadArgumentsException,
+                     zookeeper.BADVERSION: zookeeper.BadVersionException,
+                     zookeeper.CLOSING: zookeeper.ClosingException,
+                     zookeeper.CONNECTIONLOSS:
                         zookeeper.ConnectionLossException,
-                    zookeeper.DATAINCONSISTENCY:
+                     zookeeper.DATAINCONSISTENCY:
                         zookeeper.DataInconsistencyException,
-                    zookeeper.INVALIDACL: zookeeper.InvalidACLException,
-                    zookeeper.INVALIDCALLBACK:
+                     zookeeper.INVALIDACL: zookeeper.InvalidACLException,
+                     zookeeper.INVALIDCALLBACK:
                         zookeeper.InvalidCallbackException,
-                    zookeeper.INVALIDSTATE: zookeeper.InvalidStateException,
-                    zookeeper.MARSHALLINGERROR:
+                     zookeeper.INVALIDSTATE: zookeeper.InvalidStateException,
+                     zookeeper.MARSHALLINGERROR:
                         zookeeper.MarshallingErrorException,
-                    zookeeper.NONODE: zookeeper.NoNodeException,
-                    zookeeper.NOAUTH: zookeeper.NoAuthException,
-                    zookeeper.NODEEXISTS: zookeeper.NodeExistsException,
-                    zookeeper.NOCHILDRENFOREPHEMERALS:
+                     zookeeper.NONODE: zookeeper.NoNodeException,
+                     zookeeper.NOAUTH: zookeeper.NoAuthException,
+                     zookeeper.NODEEXISTS: zookeeper.NodeExistsException,
+                     zookeeper.NOCHILDRENFOREPHEMERALS:
                         zookeeper.NoChildrenForEphemeralsException,
-                    zookeeper.NOTEMPTY: zookeeper.NotEmptyException,
-                    zookeeper.NOTHING: zookeeper.NothingException,
-                    zookeeper.OPERATIONTIMEOUT:
+                     zookeeper.NOTEMPTY: zookeeper.NotEmptyException,
+                     zookeeper.NOTHING: zookeeper.NothingException,
+                     zookeeper.OPERATIONTIMEOUT:
                         zookeeper.OperationTimeoutException,
-                    zookeeper.RUNTIMEINCONSISTENCY:
+                     zookeeper.RUNTIMEINCONSISTENCY:
                         zookeeper.RuntimeInconsistencyException,
-                    zookeeper.SESSIONEXPIRED:
+                     zookeeper.SESSIONEXPIRED:
                         zookeeper.SessionExpiredException,
-                    zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
-                    zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
-                    }
+                     zookeeper.SYSTEMERROR: zookeeper.SystemErrorException,
+                     zookeeper.UNIMPLEMENTED: zookeeper.UnimplementedException,
+                     }
 
 
 class ZKServiceBase(object):
@@ -631,7 +624,7 @@ class ZKServiceBase(object):
 
     def __init__(self, session, basepath, acl=None):
         """Constructor
-        
+
         @param session: a ZKSession object
         @param basepath: the default parent dir for zknodes.
         @param acl: access control list, by default [ZOO_OPEN_ACL_UNSAFE] is

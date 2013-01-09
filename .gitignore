@@ -5,4 +5,5 @@
 .pydevproject
 *~
 dist
+build
 evzookeeper.egg-info
