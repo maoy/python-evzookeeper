@@ -285,7 +285,67 @@ class ZKSession(object):
             return real_path
         self._raise_exception(rc)
 
-    def delete(self, path, version=-1):
+    def ensure_path(self, path, value, acl=None, flags=0, quiet=True):
+        """
+        recursively create a node synchronously.
+
+        This method will create a node in ZooKeeper. A node can only be created
+        if it does not already exists. The Create Flags affect the creation of
+        nodes.
+        If the EPHEMERAL flag is set, the node will automatically get removed
+        if the client session goes away.
+
+        PARAMETERS:
+        path: The name of the node. Expressed as a file name with slashes
+              separating ancestors of the node.
+
+        value: The data to be stored in the node.
+
+        acl: The initial ACL of the node. If None, the ACL of the parent will
+             be used.
+
+        flags: this parameter can be set to 0 for normal create or an OR
+               of the Create Flags. SEQUENCE flag is not supported.
+
+        quiet: upon an exception, whether keep quiet and continue with
+        further creations, or raise the exception and stop. Default: True.
+
+        RETURNS:
+        OK operation completed successfully
+        Otherwise throw an exception in creation
+
+        EXCEPTIONS:
+        NONODE the parent node does not exist.
+        NODEEXISTS the node already exists
+        NOAUTH the client does not have permission.
+        NOCHILDRENFOREPHEMERALS cannot create children of ephemeral nodes.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or
+        AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshall a request; possibly, out of
+         memory
+        """
+        ## unsupport flags
+        if flags & zookeeper.SEQUENCE:
+            raise RuntimeError('ensure_path does not support SEQUENCE flag')
+        ## create each sub path
+        segments = path.split('/')
+        sub_segments = []
+        for segment in segments:
+            sub_segments.append(segment)
+            sub_path = '/'.join(sub_segments)
+            if sub_path:
+                try:
+                    real_path = self.create(sub_path, value, acl=acl,
+                                            flags=flags)
+                    LOG.debug('created %s', real_path)
+                except Exception:
+                    if not quiet:
+                        raise
+        # finally, return
+        return zookeeper.OK
+
+    def _delete(self, path, version=-1):
         """
         delete a node in zookeeper synchronously.
 
@@ -325,6 +385,90 @@ class ZKSession(object):
         if rc == zookeeper.OK:
             return rc
         self._raise_exception(rc)
+
+    def _rdelete(self, path, version=-1, quiet=False):
+        """
+        delete a node in zookeeper synchronously, recursively along with all
+            its children.
+
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes
+        separating ancestors of the node.
+
+        (Subsequent parameters are optional)
+
+        version: the expected version of the node. The function will fail if
+        the actual version of the node does not match the expected version.
+         If -1 (the default) is used the version check will not take place.
+
+        quiet: upon an exception, whether keep quiet and continue with
+        further deletions, or raise the exception and stop. Default: False.
+
+        RETURNS:
+        OK operation completed successfully
+        Otherwise throw an exception in deletion
+        """
+        ## first, get children
+        children = []
+        try:
+            children = self.get_children(path)
+        except Exception:
+            if not quiet:
+                raise
+        ## second, delete all children
+        if children:
+            for child in children:
+                # does not check children's versions
+                self._rdelete(path + '/' + child, quiet=quiet)
+        ## third, delete myself
+        try:
+            rc = self._delete(path, version=version)
+            if rc == zookeeper.OK:
+                LOG.debug('deleted %s', path)
+        except Exception:
+            if not quiet:
+                raise
+        # finally, return
+        return zookeeper.OK
+
+    def delete(self, path, version=-1, recursive=False):
+        """
+        delete a node in zookeeper synchronously, either recursively or not.
+
+        PARAMETERS:
+        path: the name of the node. Expressed as a file name with slashes
+        separating ancestors of the node.
+
+        (Subsequent parameters are optional)
+
+        version: the expected version of the node. The function will fail if
+        the actual version of the node does not match the expected version.
+         If -1 (the default) is used the version check will not take place.
+
+        recursive: Default False, just delete a single node. If True,
+            delete its children as well.
+
+        RETURNS:
+        OK operation completed successfully
+        Otherwise throw an exception in deletion
+
+        One of the following exceptions is returned when an error occurs.
+        NONODE the node does not exist.
+        NOAUTH the client does not have permission.
+        BADVERSION expected version does not match actual version.
+        NOTEMPTY children are present; node cannot be deleted.
+        BADARGUMENTS - invalid input parameters
+        INVALIDSTATE - zhandle state is either SESSION_EXPIRED_STATE or
+        AUTH_FAILED_STATE
+        MARSHALLINGERROR - failed to marshal a request; possibly, out of
+         memory
+        """
+        ## delete a single node
+        if not recursive:
+            return self._delete(path, version=version)
+        ## delete a node along with its children
+        else:
+            return self._rdelete(path, version=version)
 
     def exists(self, path, watch=None):
         """checks the existence of a node in zookeeper.
