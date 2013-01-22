@@ -26,7 +26,7 @@ def demo_acl():
     session.create("/test-acl", "abc", acl, zookeeper.EPHEMERAL)
     print 'test-acl created'
     print "(acl,stat)=", session.get_acl("/test-acl")
-
+    session.delete('/test-acl')  # cleanup
 
 if __name__ == '__main__':
     demo_acl()
